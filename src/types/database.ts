@@ -55,6 +55,15 @@ export interface MembershipWithTenant extends TenantMembership {
   tenant: Tenant;
 }
 
+export interface MembershipWithProfile extends TenantMembership {
+  profile: Pick<Profile, "full_name"> | null;
+}
+
+export interface TenantWithMemberships extends Tenant {
+  /** Filtered to active memberships by the query; use .length for count. */
+  tenant_memberships: Array<Pick<TenantMembership, "id" | "status">>;
+}
+
 // ── Supabase Database generic type (used with createClient<Database>) ──────
 
 export interface Database {
@@ -81,6 +90,20 @@ export interface Database {
       tenant_status: TenantStatus;
       membership_status: MembershipStatus;
       user_role: UserRole;
+    };
+    Functions: {
+      create_client_tenant: {
+        Args: { p_name: string; p_slug: string; p_status?: TenantStatus };
+        Returns: string; // uuid
+      };
+      get_user_id_by_email: {
+        Args: { p_email: string };
+        Returns: string | null; // uuid or null
+      };
+      has_agency_membership_in_tenant: {
+        Args: { target_tenant_id: string };
+        Returns: boolean;
+      };
     };
   };
 }
