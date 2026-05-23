@@ -16,6 +16,7 @@ function LoginForm() {
   );
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function handlePasswordLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -31,6 +32,27 @@ function LoginForm() {
       setLoading(false);
     }
     // On success, the server action calls redirect() — no further handling needed
+  }
+
+  async function handleForgotPassword() {
+    if (!email) {
+      setError("Enter your email address first.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setResetSent(true);
+    }
+    setLoading(false);
   }
 
   async function handleMagicLink() {
@@ -61,7 +83,7 @@ function LoginForm() {
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
       <h1 className="text-xl font-semibold text-gray-900 mb-6">Sign in</h1>
 
-      {magicLinkSent ? (
+      {(magicLinkSent || resetSent) ? (
         <div className="text-center py-4">
           <div
             className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3"
@@ -73,11 +95,13 @@ function LoginForm() {
           </div>
           <p className="font-medium text-gray-900">Check your email</p>
           <p className="text-sm text-gray-500 mt-1">
-            We sent a sign-in link to <strong>{email}</strong>
+            {resetSent
+              ? <>We sent a password reset link to <strong>{email}</strong></>
+              : <>We sent a sign-in link to <strong>{email}</strong></>}
           </p>
           <button
             className="mt-4 text-sm underline text-gray-400 hover:text-gray-600"
-            onClick={() => setMagicLinkSent(false)}
+            onClick={() => { setMagicLinkSent(false); setResetSent(false); }}
           >
             Use a different email
           </button>
@@ -149,6 +173,17 @@ function LoginForm() {
           >
             Send magic link
           </button>
+
+          <div className="text-center">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={handleForgotPassword}
+              className="text-sm text-gray-400 hover:text-gray-600 underline disabled:opacity-60"
+            >
+              Forgot or never set a password?
+            </button>
+          </div>
         </form>
       )}
     </div>

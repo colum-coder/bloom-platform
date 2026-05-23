@@ -3,7 +3,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 import { getDefaultRedirect, isAgencyRole } from "@/lib/auth/permissions";
 import type { MembershipWithTenant } from "@/types/database";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback", "/unauthorized"];
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/reset-password", "/unauthorized"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
