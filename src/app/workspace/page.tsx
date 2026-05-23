@@ -62,7 +62,7 @@ export default async function ClientWorkspace() {
             <span className="text-sm text-gray-400 hidden sm:block truncate max-w-[160px]">
               {user.email}
             </span>
-            <SignOutButton />
+            <SignOutButton className="text-sm text-gray-400 hover:text-gray-700 transition-colors" />
           </div>
         </div>
       </header>
