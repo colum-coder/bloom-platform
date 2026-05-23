@@ -1,14 +1,12 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter, useSearchParams } from "next/navigation";
+import { signInWithPassword } from "./actions";
 
 function LoginForm() {
-  const supabase = createClient();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirectTo") ?? "/";
   const authError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
@@ -19,34 +17,20 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
 
-  async function handlePasswordLogin(e: React.FormEvent) {
+  async function handlePasswordLogin(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const formData = new FormData(e.currentTarget);
+    const result = await signInWithPassword(formData);
 
-    if (error) {
-      setError(error.message);
+    // If signInWithPassword returned an error (didn't redirect), show it
+    if (result?.error) {
+      setError(result.error);
       setLoading(false);
-      return;
     }
-
-    // Query memberships to determine the correct landing page directly,
-    // avoiding a root-redirect hop through middleware that can drop session cookies.
-    const { data: memberships } = await supabase
-      .from("tenant_memberships")
-      .select("role")
-      .eq("status", "active");
-
-    const agencyRoles = [
-      "agency_owner", "agency_admin", "agency_manager",
-      "agency_consultant", "agency_reviewer",
-    ];
-    const hasAgencyRole = memberships?.some((m) => agencyRoles.includes(m.role));
-    const destination = hasAgencyRole ? "/agency" : "/workspace";
-
-    window.location.href = redirectTo === "/" ? destination : redirectTo;
+    // On success, the server action calls redirect() — no further handling needed
   }
 
   async function handleMagicLink() {
@@ -57,10 +41,11 @@ function LoginForm() {
     setLoading(true);
     setError(null);
 
+    const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
@@ -105,6 +90,7 @@ function LoginForm() {
             </label>
             <input
               id="email"
+              name="email"
               type="email"
               autoComplete="email"
               required
@@ -121,6 +107,7 @@ function LoginForm() {
             </label>
             <input
               id="password"
+              name="password"
               type="password"
               autoComplete="current-password"
               value={password}
