@@ -26,12 +26,16 @@ function LoginForm() {
     const formData = new FormData(e.currentTarget);
     const result = await signInWithPassword(formData);
 
-    // If signInWithPassword returned an error (didn't redirect), show it
     if (result?.error) {
       setError(result.error);
       setLoading(false);
+    } else if (result?.redirectTo) {
+      // Hard redirect (full page load) so all Set-Cookie headers from the
+      // server action are guaranteed to be in the browser before middleware
+      // evaluates the next request. A soft router.push() can race against
+      // the cookies being committed.
+      window.location.href = result.redirectTo;
     }
-    // On success, the server action calls redirect() — no further handling needed
   }
 
   // Use NEXT_PUBLIC_APP_URL as the base for all auth email redirects.
