@@ -4,7 +4,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AGENCY_ROLES } from "@/lib/auth/permissions";
-import type { UserRole } from "@/types/database";
 
 export default async function RootPage() {
   const supabase = createClient();
@@ -16,14 +15,16 @@ export default async function RootPage() {
     redirect("/login");
   }
 
-  const { data: memberships } = await supabase
+  // Same Supabase v2 generic collapse workaround as actions.ts
+  const membershipResult = await supabase
     .from("tenant_memberships")
     .select("role")
     .eq("user_id", user.id)
     .eq("status", "active");
+  const memberships = (membershipResult.data ?? []) as unknown as Array<{ role: string }>;
 
-  const hasAgencyRole = (memberships ?? []).some((m) =>
-    (AGENCY_ROLES as UserRole[]).includes(m.role as UserRole)
+  const hasAgencyRole = memberships.some((m) =>
+    (AGENCY_ROLES as string[]).includes(m.role)
   );
 
   redirect(hasAgencyRole ? "/agency" : "/workspace");
