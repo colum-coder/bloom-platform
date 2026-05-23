@@ -1,3 +1,7 @@
+// Force dynamic rendering — this layout reads user session cookies on every request.
+// Static prerendering would fail because there is no request context at build time.
+export const dynamic = "force-dynamic";
+
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { isAgencyRole } from "@/lib/auth/permissions";

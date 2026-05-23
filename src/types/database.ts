@@ -1,4 +1,48 @@
 // ── Enums ──────────────────────────────────────────────────────────────────
+// Phase 3A enums
+
+export type ContextSourceStatus = "active" | "archived";
+
+export type ContextSourceType =
+  | "prior_claim"
+  | "meeting_notes"
+  | "project_discussion"
+  | "staff_note"
+  | "client_background"
+  | "discovery_call_note"
+  | "email_thread"
+  | "technical_narrative"
+  | "technical_document_summary"
+  | "financial_summary"
+  | "payroll_export"
+  | "contractor_invoice"
+  | "cra_review_context"
+  | "other";
+
+export type AiRunStatus = "pending" | "running" | "completed" | "failed";
+
+export type ProposalType =
+  | "project"
+  | "person"
+  | "evidence"
+  | "hours"
+  | "contractor"
+  | "material"
+  | "government_support"
+  | "gap";
+
+export type ProposalDecision = "pending" | "accepted" | "rejected" | "deferred";
+
+export type ProposalRunStatus =
+  | "new"
+  | "resurfacing"
+  | "possible_duplicate"
+  | "confirmed"
+  | "superseded";
+
+export type ProposalConfidence = "high" | "medium" | "low";
+
+// ── Phase 3A row types ─────────────────────────────────────────────────────
 
 export type TenantType = "agency" | "client";
 
@@ -109,6 +153,75 @@ export interface Engagement {
   updated_at: string;
 }
 
+// Phase 3A table row types
+
+export interface ContextSource {
+  id: string;
+  engagement_id: string;
+  tenant_id: string;
+  source_type: ContextSourceType;
+  title: string;
+  body: string;
+  file_name: string | null;
+  client_visible: boolean;
+  status: ContextSourceStatus;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiSuggestionRun {
+  id: string;
+  engagement_id: string;
+  tenant_id: string;
+  triggered_by: string | null;
+  context_source_ids: string[];
+  model: string;
+  status: AiRunStatus;
+  summary: string | null;
+  activity_months: string[] | null;
+  tr_sections_supported: string[] | null;
+  tr_sections_unsupported: string[] | null;
+  truncation_warning: boolean;
+  error_message: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AiProposal {
+  id: string;
+  run_id: string;
+  engagement_id: string;
+  tenant_id: string;
+  proposal_type: ProposalType;
+  title: string;
+  description: string | null;
+  proposed_project: string | null;
+  proposed_person: string | null;
+  claim_component: string | null;
+  section_or_area: string | null;
+  confidence: ProposalConfidence;
+  reason: string | null;
+  decision: ProposalDecision;
+  run_status: ProposalRunStatus;
+  duplicate_of: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface AiSuggestionSource {
+  id: string;
+  proposal_id: string;
+  context_source_id: string | null;
+  tenant_id: string;
+  snippet: string;
+  relevance_note: string | null;
+  created_at: string;
+}
+
 // ── Joined / enriched types ────────────────────────────────────────────────
 
 export interface MembershipWithTenant extends TenantMembership {
@@ -135,6 +248,12 @@ export interface EngagementWithDetails extends Engagement {
   engagement_type: EngagementTypeWithServiceLine;
 }
 
+// Phase 3A joined types
+
+export interface AiProposalWithSources extends AiProposal {
+  ai_suggestion_sources: AiSuggestionSource[];
+}
+
 // ── Supabase Database generic type (used with createClient<Database>) ──────
 
 export interface Database {
@@ -154,6 +273,27 @@ export interface Database {
         Row: TenantMembership;
         Insert: Omit<TenantMembership, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<TenantMembership, "id">>;
+      };
+      // Phase 3A
+      context_sources: {
+        Row: ContextSource;
+        Insert: Omit<ContextSource, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<ContextSource, "id">>;
+      };
+      ai_suggestion_runs: {
+        Row: AiSuggestionRun;
+        Insert: Omit<AiSuggestionRun, "id" | "created_at">;
+        Update: Partial<Omit<AiSuggestionRun, "id">>;
+      };
+      ai_proposals: {
+        Row: AiProposal;
+        Insert: Omit<AiProposal, "id" | "created_at">;
+        Update: Partial<Omit<AiProposal, "id">>;
+      };
+      ai_suggestion_sources: {
+        Row: AiSuggestionSource;
+        Insert: Omit<AiSuggestionSource, "id" | "created_at">;
+        Update: Partial<Omit<AiSuggestionSource, "id">>;
       };
       // Phase 2
       service_lines: {
