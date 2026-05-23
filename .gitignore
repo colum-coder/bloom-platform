@@ -26,6 +26,9 @@ yarn-error.log*
 /supabase/.branches
 /supabase/.temp
 
+# TypeScript build cache
+tsconfig.tsbuildinfo
+
 # OS
 .DS_Store
 Thumbs.db
