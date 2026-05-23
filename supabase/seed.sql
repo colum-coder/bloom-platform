@@ -33,8 +33,8 @@
 
 do $$
 declare
-  v_agency_user_id   uuid := 'f8e92271-ddd7-499b-a6ce-45193a4e175c';
-  v_client_user_id   uuid := 'f7538f45-75cd-4f15-a0da-9c1350942790';
+  v_agency_user_id   uuid := '73a5d1a2-a011-441c-a52a-e178ec1f5fb4';  -- colum@bloomfunding.ca
+  v_client_user_id   uuid := 'adbcc147-2df8-4beb-b9c0-7cf3c2eeec69';  -- info@bloomfunding.ca
 
   v_bloom_tenant_id  uuid := gen_random_uuid();
   v_client_tenant_id uuid := gen_random_uuid();
