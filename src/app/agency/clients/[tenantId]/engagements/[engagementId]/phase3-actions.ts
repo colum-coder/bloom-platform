@@ -24,6 +24,7 @@ import { createAnthropicClient, getModel } from "@/lib/ai/anthropic";
 import {
   SRED_SYSTEM_PROMPT,
   SUBMIT_PROPOSALS_TOOL,
+  PROMPT_VERSION_STRING,
   buildUserMessage,
 } from "@/lib/ai/sred-prompt";
 import { repairTruncatedJson } from "@/lib/ai/repair-json";
@@ -271,6 +272,7 @@ export async function triggerAiRun(
       triggered_by:       user.id,
       context_source_ids: contextSourceIds,
       model,
+      prompt_version:     PROMPT_VERSION_STRING, // "sred_project_discovery_v1"
       status:             "pending",
     } as unknown as never)
     .select("id")
@@ -530,10 +532,23 @@ export async function triggerAiRun(
 // An accepted proposal cannot be moved directly to rejected.
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * Update the decision on a proposal, optionally recording a reason.
+ *
+ * decision_reason:
+ *   - For reject/defer: optional text (e.g. "not SR&ED", "routine work").
+ *     Stored verbatim. The UI surfaces predefined suggestions via datalist.
+ *   - For accept: reason is not used; pass null.
+ *   - For pending (undo): reason is always cleared to null regardless of input.
+ *
+ * The original AI proposal fields (title, description, reason, confidence)
+ * are NEVER updated here. They are read-only after creation.
+ */
 export async function updateProposalDecision(
   proposalId: string,
   newDecision: ProposalDecision,
-  tenantId: string
+  tenantId: string,
+  decisionReason: string | null = null
 ): Promise<{ error?: string; success?: boolean }> {
   const { supabase, user } = await requireAgencyUser(tenantId);
 
@@ -561,12 +576,19 @@ export async function updateProposalDecision(
         "An accepted proposal can only be moved back to pending. Change to pending first, then reject or defer.",
     };
 
+  // Normalise reason: strip whitespace; clear it when undoing to pending.
+  const normalisedReason =
+    newDecision === "pending"
+      ? null
+      : (decisionReason?.trim() || null);
+
   const { error: updateError } = await supabase
     .from("ai_proposals")
     .update({
-      decision:    newDecision,
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
+      decision:        newDecision,
+      decision_reason: normalisedReason,
+      reviewed_by:     user.id,
+      reviewed_at:     new Date().toISOString(),
     } as unknown as never)
     .eq("id", proposalId)
     .eq("tenant_id", tenantId);

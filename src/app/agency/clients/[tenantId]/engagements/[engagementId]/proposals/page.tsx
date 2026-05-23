@@ -290,6 +290,7 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
                   proposalId={proposal.id}
                   tenantId={params.tenantId}
                   initialDecision={proposal.decision}
+                  initialReason={proposal.decision_reason}
                 />
               </div>
             );

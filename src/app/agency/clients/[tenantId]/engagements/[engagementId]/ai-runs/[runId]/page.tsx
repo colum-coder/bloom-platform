@@ -136,7 +136,14 @@ export default async function AiRunDetailPage({ params }: Props) {
                 year: "numeric", month: "long", day: "numeric",
               })}
             </h1>
-            <p className="text-sm text-gray-400 mt-0.5 font-mono">{run.model}</p>
+            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+            <span className="text-sm text-gray-400 font-mono">{run.model}</span>
+            {run.prompt_version && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-medium bg-gray-100 text-gray-500">
+                {run.prompt_version}
+              </span>
+            )}
+          </div>
           </div>
           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
             run.status === "completed" ? "bg-emerald-50 text-emerald-700" :
@@ -322,11 +329,12 @@ export default async function AiRunDetailPage({ params }: Props) {
                       </div>
                     )}
 
-                    {/* Decision widget */}
+                    {/* Decision widget — captures optional reason for reject/defer */}
                     <ProposalDecisionWidget
                       proposalId={proposal.id}
                       tenantId={params.tenantId}
                       initialDecision={proposal.decision}
+                      initialReason={proposal.decision_reason}
                     />
                   </div>
                 );

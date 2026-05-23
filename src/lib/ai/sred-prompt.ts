@@ -12,6 +12,30 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 
+// ── Prompt template versioning ─────────────────────────────────────────────
+//
+// Every ai_suggestion_run stores the prompt version used so output quality
+// can be compared as the prompt improves over time.
+//
+// Naming convention: {template_name}_{version}
+//   template_name — kebab-case description of what the prompt does
+//   version       — monotonically incrementing vN
+//
+// INCREMENT the version (v1 → v2) whenever the system prompt or tool schema
+// changes in a way that materially affects proposal quality or coverage.
+// Do NOT change the name — the name identifies the purpose of the template
+// across all versions.
+//
+// This is stored in code (not a DB table) for Phase 3A. A future Guidance
+// Mode can promote templates to a DB-managed library for per-client tuning.
+
+export const PROMPT_NAME    = "sred_project_discovery";
+export const PROMPT_VERSION = "v1";
+
+/** Full version string stored on every ai_suggestion_runs row. */
+export const PROMPT_VERSION_STRING = `${PROMPT_NAME}_${PROMPT_VERSION}`;
+// → "sred_project_discovery_v1"
+
 // ── Source type labels ─────────────────────────────────────────────────────
 
 export const SOURCE_TYPE_LABELS: Record<string, string> = {

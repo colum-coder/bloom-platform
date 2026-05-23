@@ -177,6 +177,8 @@ export interface AiSuggestionRun {
   triggered_by: string | null;
   context_source_ids: string[];
   model: string;
+  /** Prompt template name+version, e.g. "sred_project_discovery_v1". Added in migration 006. */
+  prompt_version: string | null;
   status: AiRunStatus;
   summary: string | null;
   activity_months: string[] | null;
@@ -205,6 +207,8 @@ export interface AiProposal {
   confidence: ProposalConfidence;
   reason: string | null;
   decision: ProposalDecision;
+  /** Optional reason recorded when rejecting or deferring. Cleared on undo. Added in migration 006. */
+  decision_reason: string | null;
   run_status: ProposalRunStatus;
   duplicate_of: string | null;
   reviewed_by: string | null;
