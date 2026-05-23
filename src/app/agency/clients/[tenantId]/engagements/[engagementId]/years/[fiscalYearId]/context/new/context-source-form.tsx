@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { addContextSource } from "../../phase3-actions";
+import { addContextSource } from "../../year-actions";
 
 const SOURCE_TYPE_OPTIONS = [
   { value: "technical_narrative",        label: "Technical Narrative" },
@@ -22,12 +22,13 @@ const SOURCE_TYPE_OPTIONS = [
 ] as const;
 
 interface Props {
+  fiscalYearId: string;
   engagementId: string;
   tenantId: string;
 }
 
-export function ContextSourceForm({ engagementId, tenantId }: Props) {
-  const router = useRouter();
+export function ContextSourceForm({ fiscalYearId, engagementId, tenantId }: Props) {
+  const router  = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
@@ -35,20 +36,17 @@ export function ContextSourceForm({ engagementId, tenantId }: Props) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
     const formData = new FormData(e.currentTarget);
-    const result = await addContextSource(formData, engagementId, tenantId);
-
+    const result = await addContextSource(formData, fiscalYearId, engagementId, tenantId);
     if (result?.error) {
       setError(result.error);
       setLoading(false);
     }
-    // On success addContextSource calls redirect() — no further action needed.
+    // On success, addContextSource calls redirect() — no further action needed.
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-
       {/* Title */}
       <div>
         <label htmlFor="cs-title" className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -76,9 +74,7 @@ export function ContextSourceForm({ engagementId, tenantId }: Props) {
           className="w-full sm:w-72 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
         >
           {SOURCE_TYPE_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
         <p className="text-xs text-gray-400 mt-1">
@@ -118,14 +114,12 @@ export function ContextSourceForm({ engagementId, tenantId }: Props) {
         </p>
       </div>
 
-      {/* Error */}
       {error && (
         <p className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2.5 border border-red-200">
           {error}
         </p>
       )}
 
-      {/* Actions */}
       <div className="flex items-center gap-3 pt-1">
         <button
           type="submit"

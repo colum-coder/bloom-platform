@@ -2,13 +2,13 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isAgencyRole } from "@/lib/auth/permissions";
-import { archiveContextSource } from "../phase3-actions";
+import { archiveContextSource } from "../year-actions";
 import { TriggerAiRunButton } from "./trigger-run-button";
 import type { ContextSource } from "@/types/database";
 import { SOURCE_TYPE_LABELS } from "@/lib/ai/sred-prompt";
 
 interface Props {
-  params: { tenantId: string; engagementId: string };
+  params: { tenantId: string; engagementId: string; fiscalYearId: string };
 }
 
 export default async function ContextSourcesPage({ params }: Props) {
@@ -25,18 +25,26 @@ export default async function ContextSourcesPage({ params }: Props) {
   const rows = (memberships ?? []) as Array<{ role: string }>;
   if (!rows.some((m) => isAgencyRole(m.role as never))) redirect("/unauthorized");
 
-  // Load engagement
-  const { data: rawEng, error: engError } = await supabase
-    .from("engagements")
-    .select("title, tenant_id")
-    .eq("id", params.engagementId)
+  // Load fiscal year — triple-ownership check
+  const { data: rawFy, error: fyError } = await supabase
+    .from("fiscal_years")
+    .select("label")
+    .eq("id", params.fiscalYearId)
+    .eq("engagement_id", params.engagementId)
     .eq("tenant_id", params.tenantId)
     .single();
 
-  if (engError || !rawEng) notFound();
-  const eng = rawEng as unknown as { title: string; tenant_id: string };
+  if (fyError || !rawFy) notFound();
+  const fy = rawFy as unknown as { label: string };
 
-  // Load tenant name
+  const { data: engData } = await supabase
+    .from("engagements")
+    .select("title")
+    .eq("id", params.engagementId)
+    .eq("tenant_id", params.tenantId)
+    .single();
+  const engTitle = (engData as unknown as { title: string } | null)?.title ?? "Engagement";
+
   const { data: tenantData } = await supabase
     .from("tenants")
     .select("name")
@@ -44,23 +52,25 @@ export default async function ContextSourcesPage({ params }: Props) {
     .single();
   const tenantName = (tenantData as unknown as { name: string } | null)?.name ?? "Client";
 
-  // Load active context sources
+  // Load active context sources for this fiscal year
   const { data: rawSources } = await supabase
     .from("context_sources")
     .select("*")
-    .eq("engagement_id", params.engagementId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId)
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
   const sources = (rawSources ?? []) as unknown as ContextSource[];
 
-  // Load AI run count for info
+  // Load AI run count for this fiscal year
   const { count: runCount } = await supabase
     .from("ai_suggestion_runs")
     .select("*", { count: "exact", head: true })
-    .eq("engagement_id", params.engagementId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId);
+
+  const yearBase = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
   return (
     <div className="px-6 sm:px-8 py-8 max-w-5xl mx-auto">
@@ -68,9 +78,11 @@ export default async function ContextSourcesPage({ params }: Props) {
       <nav className="flex items-center gap-1.5 text-sm text-gray-400 mb-6 flex-wrap">
         <Link href="/agency/clients" className="hover:text-gray-700 transition-colors">Clients</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[120px]">{tenantName}</Link>
+        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[100px]">{tenantName}</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[180px]">{eng.title}</Link>
+        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[140px]">{engTitle}</Link>
+        <span>/</span>
+        <Link href={yearBase} className="hover:text-gray-700 transition-colors">{fy.label}</Link>
         <span>/</span>
         <span className="text-gray-700 font-medium">Context</span>
       </nav>
@@ -80,11 +92,11 @@ export default async function ContextSourcesPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Context Sources</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            Source material the AI will analyse. All content is agency-only.
+            Source material for the <span className="text-gray-600 font-medium">{fy.label}</span> claim year. Agency-only.
           </p>
         </div>
         <Link
-          href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/context/new`}
+          href={`${yearBase}/context/new`}
           className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity flex-shrink-0"
           style={{ backgroundColor: "#03CEA4" }}
         >
@@ -93,8 +105,10 @@ export default async function ContextSourcesPage({ params }: Props) {
       </div>
 
       {/* AI run trigger */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-5"
-           style={{ borderLeftWidth: 3, borderLeftColor: "#2B307E" }}>
+      <div
+        className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-5"
+        style={{ borderLeftWidth: 3, borderLeftColor: "#2B307E" }}
+      >
         <div className="flex items-start gap-3 mb-3">
           <span style={{ color: "#2B307E" }} className="flex-shrink-0 mt-0.5">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -104,11 +118,11 @@ export default async function ContextSourcesPage({ params }: Props) {
           <div>
             <h2 className="text-sm font-semibold text-gray-900">AI Analysis</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Analyses all active sources and proposes SR&ED projects, people, evidence, and gaps.
+              Analyses all active sources and proposes SR&amp;ED projects, people, evidence, and gaps.
               {runCount != null && runCount > 0 && (
                 <> &middot;{" "}
                   <Link
-                    href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/ai-runs`}
+                    href={`${yearBase}/ai-runs`}
                     className="text-gray-600 hover:underline"
                   >
                     {runCount} run{runCount === 1 ? "" : "s"} so far
@@ -119,6 +133,7 @@ export default async function ContextSourcesPage({ params }: Props) {
           </div>
         </div>
         <TriggerAiRunButton
+          fiscalYearId={params.fiscalYearId}
           engagementId={params.engagementId}
           tenantId={params.tenantId}
           sourceCount={sources.length}
@@ -139,10 +154,7 @@ export default async function ContextSourcesPage({ params }: Props) {
             <p className="text-sm text-gray-500 mb-1">No context sources yet.</p>
             <p className="text-xs text-gray-400">
               Add source material to enable AI analysis.{" "}
-              <Link
-                href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/context/new`}
-                className="text-teal-600 hover:underline"
-              >
+              <Link href={`${yearBase}/context/new`} className="text-teal-600 hover:underline">
                 Add the first one
               </Link>
               .
@@ -162,9 +174,7 @@ export default async function ContextSourcesPage({ params }: Props) {
                       <span className="mr-2 font-mono">{src.file_name}</span>
                     )}
                     {new Date(src.created_at).toLocaleDateString("en-CA", {
-                      year: "numeric",
-                      month: "short",
-                      day: "numeric",
+                      year: "numeric", month: "short", day: "numeric",
                     })}
                   </p>
                   <p className="text-xs text-gray-400 mt-1 line-clamp-2">
@@ -172,11 +182,12 @@ export default async function ContextSourcesPage({ params }: Props) {
                   </p>
                 </div>
 
-                {/* Archive form — server action, stays on page via revalidatePath */}
+                {/* Archive — stays on page via revalidatePath */}
                 <form action={archiveContextSource} className="flex-shrink-0">
-                  <input type="hidden" name="id" value={src.id} />
-                  <input type="hidden" name="tenantId" value={params.tenantId} />
+                  <input type="hidden" name="id"           value={src.id} />
+                  <input type="hidden" name="tenantId"     value={params.tenantId} />
                   <input type="hidden" name="engagementId" value={params.engagementId} />
+                  <input type="hidden" name="fiscalYearId" value={params.fiscalYearId} />
                   <button
                     type="submit"
                     className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded-md px-2.5 py-1 bg-white hover:bg-gray-50 transition-colors"
@@ -193,16 +204,10 @@ export default async function ContextSourcesPage({ params }: Props) {
 
       {/* Navigation */}
       <div className="mt-5 flex items-center gap-4 text-sm">
-        <Link
-          href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/ai-runs`}
-          className="text-gray-500 hover:text-gray-900 transition-colors"
-        >
+        <Link href={`${yearBase}/ai-runs`} className="text-gray-500 hover:text-gray-900 transition-colors">
           View AI Runs →
         </Link>
-        <Link
-          href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/proposals`}
-          className="text-gray-500 hover:text-gray-900 transition-colors"
-        >
+        <Link href={`${yearBase}/proposals`} className="text-gray-500 hover:text-gray-900 transition-colors">
           View All Proposals →
         </Link>
       </div>

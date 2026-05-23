@@ -1,7 +1,7 @@
 -- ============================================================
--- Migration 005: Phase 3A — Context Intake and AI Proposal Infrastructure
+-- Migration 006: Phase 3A — Context Intake and AI Proposal Infrastructure
 --
--- Run AFTER 004_phase2.sql.
+-- Run AFTER 005_restructure_fiscal_years.sql.
 -- Does NOT alter existing tables, enums, or RLS policies.
 -- Adds:
 --   1. context_sources       — source material fed to AI runs
@@ -11,14 +11,20 @@
 --   5. RLS policies (split for context_sources; agency-only for AI tables)
 --   6. Indexes and updated_at triggers
 --
+-- All four tables anchor to fiscal_year_id (the specific SR&ED claim year).
+-- engagement_id and tenant_id are also stored on each table:
+--   - tenant_id     : for RLS (simple lookup, no subqueries)
+--   - engagement_id : denormalized convenience for cross-year queries
+-- Server actions verify that fiscal_year_id, engagement_id, and tenant_id
+-- are mutually consistent before any insert.
+--
 -- Design decisions:
 --   - context_sources uses status='active'|'archived' — NEVER hard-deleted,
 --     because ai_suggestion_sources.context_source_id must remain traceable.
---     There is no DELETE RLS policy on this table by design.
+--     There is no DELETE RLS policy on context_sources by design.
 --   - context_sources has a client_visible column and a client SELECT policy
 --     (WHERE client_visible = true), but Phase 3A workspace UI does NOT
---     query this table. All test rows default to client_visible = false,
---     so client sessions return zero rows unless explicitly published.
+--     query this table. All rows default to client_visible = false.
 --   - ai_suggestion_runs, ai_proposals, ai_suggestion_sources are
 --     agency-only — no client RLS policy exists on these tables.
 --   - The projects table is Phase 3B and is not created here.
@@ -26,15 +32,12 @@
 
 -- ──────────────────────────────────────────────────────────
 -- 1. context_sources
---    Free-text source material attached to an engagement.
---    Bloom staff add pasted text, typed notes, or structured
---    narrative inputs. File references are a future phase.
---    Rows are never hard-deleted — use status='archived'.
 -- ──────────────────────────────────────────────────────────
 
 create table public.context_sources (
   id             uuid        primary key default gen_random_uuid(),
-  engagement_id  uuid        not null references public.engagements(id) on delete cascade,
+  fiscal_year_id uuid        not null references public.fiscal_years(id) on delete cascade,
+  engagement_id  uuid        not null references public.engagements(id),
   tenant_id      uuid        not null references public.tenants(id),
   source_type    text        not null,
   title          text        not null,
@@ -46,91 +49,66 @@ create table public.context_sources (
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
 
-  -- 14 source types — use 'other' when none fit
   constraint context_sources_source_type_check check (source_type in (
-    'prior_claim',
-    'meeting_notes',
-    'project_discussion',
-    'staff_note',
-    'client_background',
-    'discovery_call_note',
-    'email_thread',
-    'technical_narrative',
-    'technical_document_summary',
-    'financial_summary',
-    'payroll_export',
-    'contractor_invoice',
-    'cra_review_context',
-    'other'
+    'prior_claim', 'meeting_notes', 'project_discussion', 'staff_note',
+    'client_background', 'discovery_call_note', 'email_thread',
+    'technical_narrative', 'technical_document_summary', 'financial_summary',
+    'payroll_export', 'contractor_invoice', 'cra_review_context', 'other'
   )),
-
-  -- Hard deletion is not permitted; use status='archived' instead
   constraint context_sources_status_check check (status in ('active', 'archived'))
 );
 
 comment on table public.context_sources is
-  'Source material fed to AI analysis runs. Rows are NEVER hard-deleted — '
-  'archiving (status=archived) is the only removal mechanism, so that '
-  'ai_suggestion_sources snippets remain traceable to their origin. '
-  'client_visible is infrastructure for future client sharing; the Phase 3A '
-  'workspace does not query this table. No DELETE RLS policy exists by design.';
+  'Source material fed to AI analysis runs, anchored to a specific fiscal year (SR&ED claim year). '
+  'fiscal_year_id is the primary anchor; engagement_id and tenant_id are denormalized for convenience. '
+  'Rows are NEVER hard-deleted — archiving (status=archived) is the only removal mechanism, '
+  'so that ai_suggestion_sources snippets remain traceable to their origin. '
+  'No DELETE RLS policy exists by design.';
 
 create trigger context_sources_updated_at
   before update on public.context_sources
   for each row execute procedure public.set_updated_at();
 
-create index on public.context_sources (engagement_id, status);
+create index on public.context_sources (fiscal_year_id, status);
+create index on public.context_sources (engagement_id);
 create index on public.context_sources (tenant_id);
 
 alter table public.context_sources enable row level security;
 
--- Agency SELECT — all rows for tenants where the user has an agency membership.
--- These are two SEPARATE policies (not one combined) so neither role can
--- bypass the other's visibility constraint.
+-- Agency SELECT — all rows for tenants where the user has an agency membership
 create policy "context_sources: agency can select"
-  on public.context_sources
-  for select
+  on public.context_sources for select
   using (public.has_agency_membership_in_tenant(tenant_id));
 
--- Client SELECT — only client_visible rows.
--- Infrastructure for future client sharing. Phase 3A workspace does NOT
--- query this table. All rows default to client_visible=false so client
--- sessions return zero rows unless deliberately published.
+-- Client SELECT — only client_visible rows (Phase 3A workspace does NOT query this)
 create policy "context_sources: clients see published only"
-  on public.context_sources
-  for select
+  on public.context_sources for select
   using (public.is_active_member(tenant_id) and client_visible = true);
 
--- Agency INSERT
 create policy "context_sources: agency can insert"
-  on public.context_sources
-  for insert
+  on public.context_sources for insert
   with check (public.has_agency_membership_in_tenant(tenant_id));
 
--- Agency UPDATE — includes the archive action (status='archived').
--- No DELETE policy exists. Hard deletion is not permitted.
+-- Agency UPDATE — includes the archive action (status='archived'). No DELETE policy.
 create policy "context_sources: agency can update"
-  on public.context_sources
-  for update
+  on public.context_sources for update
   using  (public.has_agency_membership_in_tenant(tenant_id))
   with check (public.has_agency_membership_in_tenant(tenant_id));
 
 
 -- ──────────────────────────────────────────────────────────
 -- 2. ai_suggestion_runs
---    One row per AI analysis run triggered by agency staff.
---    Records which context sources were included, which model
---    was used, run-level summary fields, and truncation state.
---    Agency-only — no client RLS policy.
 -- ──────────────────────────────────────────────────────────
 
 create table public.ai_suggestion_runs (
   id                      uuid        primary key default gen_random_uuid(),
-  engagement_id           uuid        not null references public.engagements(id) on delete cascade,
+  fiscal_year_id          uuid        not null references public.fiscal_years(id) on delete cascade,
+  engagement_id           uuid        not null references public.engagements(id),
   tenant_id               uuid        not null references public.tenants(id),
   triggered_by            uuid        references auth.users(id) on delete set null,
   context_source_ids      uuid[]      not null,
   model                   text        not null,
+  prompt_version          text,
   status                  text        not null default 'pending',
   summary                 text,
   activity_months         text[],
@@ -149,35 +127,32 @@ create table public.ai_suggestion_runs (
 );
 
 comment on table public.ai_suggestion_runs is
-  'One row per AI analysis run. Stores which context sources were included, '
-  'which model was used, and the AI-generated run-level summary fields. '
-  'truncation_warning=true means the AI response was truncated at max_tokens '
-  'and partial recovery was used. Agency-only — no client RLS policy.';
+  'One row per AI analysis run, anchored to a specific fiscal year (SR&ED claim year). '
+  'fiscal_year_id is the primary anchor; engagement_id and tenant_id are denormalized. '
+  'prompt_version records the template name+version used (e.g. "sred_project_discovery_v1"). '
+  'truncation_warning=true means the AI response hit max_tokens and partial recovery was used. '
+  'Agency-only — no client RLS policy.';
 
+create index on public.ai_suggestion_runs (fiscal_year_id);
 create index on public.ai_suggestion_runs (engagement_id);
 create index on public.ai_suggestion_runs (tenant_id, status);
 
 alter table public.ai_suggestion_runs enable row level security;
 
 create policy "ai_suggestion_runs: agency only"
-  on public.ai_suggestion_runs
-  for all
+  on public.ai_suggestion_runs for all
   using  (public.has_agency_membership_in_tenant(tenant_id))
   with check (public.has_agency_membership_in_tenant(tenant_id));
 
 
 -- ──────────────────────────────────────────────────────────
 -- 3. ai_proposals
---    One row per proposal from an AI run.
---    Non-destructive: existing proposals with a reviewed
---    decision are NEVER overwritten on re-run. run_status
---    classifies each new proposal against prior proposals.
---    Agency-only — no client RLS policy.
 -- ──────────────────────────────────────────────────────────
 
 create table public.ai_proposals (
   id               uuid        primary key default gen_random_uuid(),
   run_id           uuid        not null references public.ai_suggestion_runs(id) on delete cascade,
+  fiscal_year_id   uuid        not null references public.fiscal_years(id),
   engagement_id    uuid        not null references public.engagements(id),
   tenant_id        uuid        not null references public.tenants(id),
   proposal_type    text        not null,
@@ -190,6 +165,7 @@ create table public.ai_proposals (
   confidence       text        not null default 'medium',
   reason           text,
   decision         text        not null default 'pending',
+  decision_reason  text,
   run_status       text        not null default 'new',
   duplicate_of     uuid        references public.ai_proposals(id) on delete set null,
   reviewed_by      uuid        references auth.users(id) on delete set null,
@@ -200,47 +176,35 @@ create table public.ai_proposals (
     'project', 'person', 'evidence', 'hours',
     'contractor', 'material', 'government_support', 'gap'
   )),
-  constraint ai_proposals_confidence_check check (
-    confidence in ('high', 'medium', 'low')
-  ),
-  constraint ai_proposals_decision_check check (
-    decision in ('pending', 'accepted', 'rejected', 'deferred')
-  ),
+  constraint ai_proposals_confidence_check check (confidence in ('high', 'medium', 'low')),
+  constraint ai_proposals_decision_check check (decision in ('pending', 'accepted', 'rejected', 'deferred')),
   constraint ai_proposals_run_status_check check (
     run_status in ('new', 'resurfacing', 'possible_duplicate', 'confirmed', 'superseded')
   )
 );
 
 comment on table public.ai_proposals is
-  'AI-generated proposals (projects, people, evidence, costs, gaps). '
-  'Never overwritten on re-run — run_status classifies each new proposal '
-  'relative to existing ones for the same engagement. '
-  'Clients never see this table at any point. Agency-only.';
+  'AI-generated proposals (projects, people, evidence, costs, gaps), anchored to a fiscal year. '
+  'Never overwritten on re-run — run_status classifies each new proposal relative to existing ones. '
+  'decision_reason captures optional staff feedback when rejecting or deferring (Guidance Layer). '
+  'The original AI fields (title, description, confidence, reason) are read-only after creation. '
+  'Clients never see this table. Agency-only.';
 
-create index on public.ai_proposals (engagement_id, decision);
+create index on public.ai_proposals (fiscal_year_id, decision);
+create index on public.ai_proposals (engagement_id);
 create index on public.ai_proposals (run_id);
 create index on public.ai_proposals (tenant_id);
 
 alter table public.ai_proposals enable row level security;
 
 create policy "ai_proposals: agency only"
-  on public.ai_proposals
-  for all
+  on public.ai_proposals for all
   using  (public.has_agency_membership_in_tenant(tenant_id))
   with check (public.has_agency_membership_in_tenant(tenant_id));
 
 
 -- ──────────────────────────────────────────────────────────
 -- 4. ai_suggestion_sources
---    Verbatim snippets (~200 chars) linking each proposal to
---    the specific context source passage that supported it.
---
---    context_source_id is ON DELETE SET NULL so archiving a
---    context source does NOT cascade-delete the evidence trail.
---    The snippet text is preserved regardless.
---
---    tenant_id is denormalised here for simpler RLS.
---    Agency-only — no client RLS policy.
 -- ──────────────────────────────────────────────────────────
 
 create table public.ai_suggestion_sources (
@@ -254,10 +218,9 @@ create table public.ai_suggestion_sources (
 );
 
 comment on table public.ai_suggestion_sources is
-  'Verbatim excerpts (~200 chars) linking a proposal to the context source '
-  'passage that supports it. context_source_id is SET NULL on context source '
-  'deletion so archiving a source does not cascade-delete the evidence trail. '
-  'The snippet text is always preserved. Agency-only.';
+  'Verbatim excerpts (~200 chars) linking a proposal to the context source passage that supports it. '
+  'context_source_id is SET NULL on context source deletion so archiving a source does not '
+  'cascade-delete the evidence trail. The snippet text is always preserved. Agency-only.';
 
 create index on public.ai_suggestion_sources (proposal_id);
 create index on public.ai_suggestion_sources (context_source_id);
@@ -266,7 +229,6 @@ create index on public.ai_suggestion_sources (tenant_id);
 alter table public.ai_suggestion_sources enable row level security;
 
 create policy "ai_suggestion_sources: agency only"
-  on public.ai_suggestion_sources
-  for all
+  on public.ai_suggestion_sources for all
   using  (public.has_agency_membership_in_tenant(tenant_id))
   with check (public.has_agency_membership_in_tenant(tenant_id));

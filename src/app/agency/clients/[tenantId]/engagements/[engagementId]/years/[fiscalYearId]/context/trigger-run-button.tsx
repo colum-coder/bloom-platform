@@ -1,24 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { triggerAiRun } from "../phase3-actions";
+import { triggerAiRun } from "../year-actions";
 
 interface Props {
+  fiscalYearId: string;
   engagementId: string;
   tenantId: string;
   sourceCount: number;
 }
 
-export function TriggerAiRunButton({ engagementId, tenantId, sourceCount }: Props) {
+export function TriggerAiRunButton({
+  fiscalYearId,
+  engagementId,
+  tenantId,
+  sourceCount,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
   async function handleClick() {
     setLoading(true);
     setError(null);
-    const result = await triggerAiRun(engagementId, tenantId);
-    // If triggerAiRun calls redirect() on success, this line is never reached.
-    // If an error is returned, show it.
+    const result = await triggerAiRun(fiscalYearId, engagementId, tenantId);
+    // On success, triggerAiRun calls redirect() — this line is never reached.
     if (result?.error) {
       setError(result.error);
       setLoading(false);
@@ -39,7 +44,9 @@ export function TriggerAiRunButton({ engagementId, tenantId, sourceCount }: Prop
             : `Run AI analysis on ${sourceCount} source${sourceCount === 1 ? "" : "s"}`
         }
       >
-        {loading ? "Running analysis…" : `Run AI Analysis (${sourceCount} source${sourceCount === 1 ? "" : "s"})`}
+        {loading
+          ? "Running analysis…"
+          : `Run AI Analysis (${sourceCount} source${sourceCount === 1 ? "" : "s"})`}
       </button>
 
       {loading && (

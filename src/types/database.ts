@@ -73,6 +73,13 @@ export type EngagementStatus =
   | "closed"
   | "archived";
 
+export type AgreementStatus =
+  | "draft"
+  | "active"
+  | "expired"
+  | "terminated"
+  | "pending_renewal";
+
 // ── Table row types ────────────────────────────────────────────────────────
 
 export interface Profile {
@@ -129,6 +136,8 @@ export interface EngagementType {
 
 export interface FiscalYear {
   id: string;
+  /** The engagement (contract) this claim year belongs to. Nullable at DB level. */
+  engagement_id: string | null;
   tenant_id: string;
   label: string;
   start_date: string;
@@ -143,11 +152,16 @@ export interface FiscalYear {
 export interface Engagement {
   id: string;
   tenant_id: string;
-  fiscal_year_id: string | null;
+  /** fiscal_year_id removed — fiscal years now belong to engagements, not the reverse */
   engagement_type_id: string;
   title: string;
   status: EngagementStatus;
   notes: string | null;
+  /** Contract fields — nullable, populated as the contract is formalised */
+  contract_start_date: string | null;
+  contract_end_date: string | null;
+  contract_term_months: number | null;
+  agreement_status: AgreementStatus | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -157,6 +171,9 @@ export interface Engagement {
 
 export interface ContextSource {
   id: string;
+  /** Primary anchor — the specific SR&ED claim year this source belongs to */
+  fiscal_year_id: string;
+  /** Denormalized convenience — the engagement (contract) */
   engagement_id: string;
   tenant_id: string;
   source_type: ContextSourceType;
@@ -172,12 +189,15 @@ export interface ContextSource {
 
 export interface AiSuggestionRun {
   id: string;
+  /** Primary anchor — the specific SR&ED claim year */
+  fiscal_year_id: string;
+  /** Denormalized convenience */
   engagement_id: string;
   tenant_id: string;
   triggered_by: string | null;
   context_source_ids: string[];
   model: string;
-  /** Prompt template name+version, e.g. "sred_project_discovery_v1". Added in migration 006. */
+  /** Prompt template name+version, e.g. "sred_project_discovery_v1" */
   prompt_version: string | null;
   status: AiRunStatus;
   summary: string | null;
@@ -195,6 +215,9 @@ export interface AiSuggestionRun {
 export interface AiProposal {
   id: string;
   run_id: string;
+  /** Primary anchor — the specific SR&ED claim year */
+  fiscal_year_id: string;
+  /** Denormalized convenience */
   engagement_id: string;
   tenant_id: string;
   proposal_type: ProposalType;
@@ -207,7 +230,7 @@ export interface AiProposal {
   confidence: ProposalConfidence;
   reason: string | null;
   decision: ProposalDecision;
-  /** Optional reason recorded when rejecting or deferring. Cleared on undo. Added in migration 006. */
+  /** Optional reason recorded when rejecting or deferring. Cleared on undo. */
   decision_reason: string | null;
   run_status: ProposalRunStatus;
   duplicate_of: string | null;
@@ -248,8 +271,15 @@ export interface EngagementTypeWithServiceLine extends EngagementType {
 }
 
 export interface EngagementWithDetails extends Engagement {
-  fiscal_year: FiscalYear | null;
+  /**
+   * fiscal_year removed — fiscal years now belong to the engagement as a collection.
+   * Load fiscal years separately: .from("fiscal_years").eq("engagement_id", id)
+   */
   engagement_type: EngagementTypeWithServiceLine;
+}
+
+export interface FiscalYearWithEngagement extends FiscalYear {
+  engagement: Pick<Engagement, "id" | "title" | "tenant_id">;
 }
 
 // Phase 3A joined types
@@ -333,11 +363,11 @@ export interface Database {
     Functions: {
       create_client_tenant: {
         Args: { p_name: string; p_slug: string; p_status?: TenantStatus };
-        Returns: string; // uuid
+        Returns: string;
       };
       get_user_id_by_email: {
         Args: { p_email: string };
-        Returns: string | null; // uuid or null
+        Returns: string | null;
       };
       has_agency_membership_in_tenant: {
         Args: { target_tenant_id: string };

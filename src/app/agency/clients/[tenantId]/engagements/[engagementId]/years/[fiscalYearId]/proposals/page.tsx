@@ -6,20 +6,20 @@ import { ProposalDecisionWidget } from "../ai-runs/[runId]/proposal-decision-wid
 import type { AiProposalWithSources, ProposalDecision, ProposalType } from "@/types/database";
 
 interface Props {
-  params: { tenantId: string; engagementId: string };
+  params: { tenantId: string; engagementId: string; fiscalYearId: string };
   searchParams: { decision?: string; type?: string };
 }
 
 const PROPOSAL_TYPE_OPTIONS: Array<{ value: ProposalType | "all"; label: string }> = [
-  { value: "all",              label: "All types" },
-  { value: "project",          label: "Projects" },
-  { value: "person",           label: "People" },
-  { value: "hours",            label: "Hours" },
-  { value: "contractor",       label: "Contractors" },
-  { value: "material",         label: "Materials" },
-  { value: "evidence",         label: "Evidence" },
+  { value: "all",               label: "All types" },
+  { value: "project",           label: "Projects" },
+  { value: "person",            label: "People" },
+  { value: "hours",             label: "Hours" },
+  { value: "contractor",        label: "Contractors" },
+  { value: "material",          label: "Materials" },
+  { value: "evidence",          label: "Evidence" },
   { value: "government_support", label: "Gov. Support" },
-  { value: "gap",              label: "Gaps" },
+  { value: "gap",               label: "Gaps" },
 ];
 
 const DECISION_OPTIONS: Array<{ value: ProposalDecision | "all"; label: string }> = [
@@ -37,11 +37,11 @@ const CONFIDENCE_STYLES: Record<string, string> = {
 };
 
 const RUN_STATUS_STYLES: Record<string, { label: string; style: string }> = {
-  new:               { label: "New",              style: "bg-blue-50 text-blue-700" },
-  resurfacing:       { label: "Seen before",      style: "bg-amber-50 text-amber-700" },
-  possible_duplicate: { label: "Possible dup.",   style: "bg-orange-50 text-orange-700" },
-  confirmed:         { label: "Confirmed",        style: "bg-emerald-50 text-emerald-700" },
-  superseded:        { label: "Superseded",       style: "bg-gray-100 text-gray-500" },
+  new:                { label: "New",            style: "bg-blue-50 text-blue-700" },
+  resurfacing:        { label: "Seen before",    style: "bg-amber-50 text-amber-700" },
+  possible_duplicate: { label: "Possible dup.",  style: "bg-orange-50 text-orange-700" },
+  confirmed:          { label: "Confirmed",      style: "bg-emerald-50 text-emerald-700" },
+  superseded:         { label: "Superseded",     style: "bg-gray-100 text-gray-500" },
 };
 
 const DECISION_STYLES: Record<string, string> = {
@@ -65,16 +65,27 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
   const rows = (memberships ?? []) as Array<{ role: string }>;
   if (!rows.some((m) => isAgencyRole(m.role as never))) redirect("/unauthorized");
 
-  // Load engagement
-  const { data: rawEng, error: engError } = await supabase
+  // Triple-ownership check on fiscal year
+  const { data: rawFy, error: fyError } = await supabase
+    .from("fiscal_years")
+    .select("label")
+    .eq("id", params.fiscalYearId)
+    .eq("engagement_id", params.engagementId)
+    .eq("tenant_id", params.tenantId)
+    .single();
+
+  if (fyError || !rawFy) notFound();
+  const fy = rawFy as unknown as { label: string };
+
+  const { data: engData, error: engError } = await supabase
     .from("engagements")
     .select("title")
     .eq("id", params.engagementId)
     .eq("tenant_id", params.tenantId)
     .single();
 
-  if (engError || !rawEng) notFound();
-  const eng = rawEng as unknown as { title: string };
+  if (engError || !engData) notFound();
+  const eng = engData as unknown as { title: string };
 
   const { data: tenantData } = await supabase
     .from("tenants")
@@ -83,24 +94,18 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
     .single();
   const tenantName = (tenantData as unknown as { name: string } | null)?.name ?? "Client";
 
-  // Read filter params
   const decisionFilter = searchParams.decision ?? "all";
   const typeFilter      = searchParams.type ?? "all";
 
-  // Build query
   let query = supabase
     .from("ai_proposals")
     .select("*, ai_suggestion_sources(snippet, relevance_note, context_source_id)")
-    .eq("engagement_id", params.engagementId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId)
     .order("created_at", { ascending: false });
 
-  if (decisionFilter !== "all") {
-    query = query.eq("decision", decisionFilter);
-  }
-  if (typeFilter !== "all") {
-    query = query.eq("proposal_type", typeFilter);
-  }
+  if (decisionFilter !== "all") query = query.eq("decision", decisionFilter);
+  if (typeFilter !== "all")     query = query.eq("proposal_type", typeFilter);
 
   const { data: rawProposals } = await query;
   const proposals = (rawProposals ?? []) as unknown as AiProposalWithSources[];
@@ -109,7 +114,7 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
   const { data: allDecisionRows } = await supabase
     .from("ai_proposals")
     .select("decision")
-    .eq("engagement_id", params.engagementId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId);
 
   const decisionCounts = (allDecisionRows ?? []).reduce<Record<string, number>>(
@@ -121,6 +126,8 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
     },
     {}
   );
+
+  const yearBase = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
   function filterHref(d: string, t: string) {
     const sp = new URLSearchParams();
@@ -136,9 +143,11 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
       <nav className="flex items-center gap-1.5 text-sm text-gray-400 mb-6 flex-wrap">
         <Link href="/agency/clients" className="hover:text-gray-700 transition-colors">Clients</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[120px]">{tenantName}</Link>
+        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[80px]">{tenantName}</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[180px]">{eng.title}</Link>
+        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[120px]">{eng.title}</Link>
+        <span>/</span>
+        <Link href={yearBase} className="hover:text-gray-700 transition-colors">{fy.label}</Link>
         <span>/</span>
         <span className="text-gray-700 font-medium">Proposals</span>
       </nav>
@@ -146,7 +155,7 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
       <div className="mb-5">
         <h1 className="text-xl font-semibold text-gray-900">All Proposals</h1>
         <p className="text-sm text-gray-400 mt-0.5">
-          AI-generated proposals across all runs for this engagement. Agency-only.
+          AI-generated proposals for <span className="text-gray-600 font-medium">{fy.label}</span>. Agency-only.
         </p>
       </div>
 
@@ -202,10 +211,7 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
             {decisionCounts.all == null || decisionCounts.all === 0 ? (
               <>
                 {" "}Run AI analysis from the{" "}
-                <Link
-                  href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/context`}
-                  className="text-teal-600 hover:underline"
-                >
+                <Link href={`${yearBase}/context`} className="text-teal-600 hover:underline">
                   Context
                 </Link>{" "}
                 page to generate proposals.
@@ -216,13 +222,12 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
       ) : (
         <div className="space-y-3">
           {proposals.map((proposal) => {
-            const rs   = RUN_STATUS_STYLES[proposal.run_status] ?? RUN_STATUS_STYLES.new;
+            const rs  = RUN_STATUS_STYLES[proposal.run_status] ?? RUN_STATUS_STYLES.new;
             const conf = CONFIDENCE_STYLES[proposal.confidence] ?? CONFIDENCE_STYLES.medium;
             const dec  = DECISION_STYLES[proposal.decision] ?? DECISION_STYLES.pending;
 
             return (
               <div key={proposal.id} className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
-                {/* Header row */}
                 <div className="flex items-start gap-3 flex-wrap mb-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -265,7 +270,6 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
                   <p className="text-xs text-gray-500 italic mb-2">{proposal.reason}</p>
                 )}
 
-                {/* Snippets */}
                 {proposal.ai_suggestion_sources.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     {proposal.ai_suggestion_sources.map((src) => (
@@ -276,10 +280,9 @@ export default async function AllProposalsPage({ params, searchParams }: Props) 
                   </div>
                 )}
 
-                {/* Run link */}
                 <div className="mt-2 mb-0.5">
                   <Link
-                    href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/ai-runs/${proposal.run_id}`}
+                    href={`${yearBase}/ai-runs/${proposal.run_id}`}
                     className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                   >
                     From run {new Date(proposal.created_at).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}

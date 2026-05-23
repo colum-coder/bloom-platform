@@ -18,13 +18,9 @@
  */
 
 import { useState } from "react";
-import { updateProposalDecision } from "../../phase3-actions";
+import { updateProposalDecision } from "../../year-actions";
 import type { ProposalDecision } from "@/types/database";
 
-// Predefined reason suggestions surfaced via <datalist>.
-// Staff can type any value — these are suggestions, not constraints.
-// Vocabulary is intentionally open so natural categories can emerge
-// before the schema is tightened in a future Guidance Mode phase.
 const REASON_SUGGESTIONS = [
   "not SR&ED",
   "routine work",
@@ -96,10 +92,10 @@ export function ProposalDecisionWidget({
 
   // ── Confirming reject or defer ──────────────────────────────────────────
   if (mode === "confirming_reject" || mode === "confirming_defer") {
-    const isReject  = mode === "confirming_reject";
-    const label     = isReject ? "Confirm Rejection" : "Confirm Deferral";
+    const isReject      = mode === "confirming_reject";
+    const label         = isReject ? "Confirm Rejection" : "Confirm Deferral";
     const nextDecision: ProposalDecision = isReject ? "rejected" : "deferred";
-    const btnStyle  = isReject
+    const btnStyle      = isReject
       ? "border-red-200 text-red-700 bg-red-50 hover:bg-red-100"
       : "border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100";
 
@@ -153,24 +149,18 @@ export function ProposalDecisionWidget({
   // ── Idle: show badge + action buttons ──────────────────────────────────
   return (
     <div className="mt-3 space-y-1.5">
-      {/* Current decision badge */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${DECISION_STYLES[decision]}`}>
           {DECISION_LABELS[decision]}
         </span>
-        {/* Show recorded reason if present */}
         {decision !== "pending" && reason && (
-          <span className="text-xs text-gray-400 italic">
-            {reason}
-          </span>
+          <span className="text-xs text-gray-400 italic">{reason}</span>
         )}
       </div>
 
-      {/* Action buttons */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {decision === "pending" && (
           <>
-            {/* Accept — no confirmation needed */}
             <button
               type="button"
               onClick={() => applyDecision("accepted", null)}
@@ -179,7 +169,6 @@ export function ProposalDecisionWidget({
             >
               {loading ? "Saving…" : "Accept"}
             </button>
-            {/* Reject — shows confirmation + reason */}
             <button
               type="button"
               onClick={() => { setMode("confirming_reject"); setReason(""); }}
@@ -188,7 +177,6 @@ export function ProposalDecisionWidget({
             >
               Reject
             </button>
-            {/* Defer — shows confirmation + reason */}
             <button
               type="button"
               onClick={() => { setMode("confirming_defer"); setReason(""); }}
@@ -200,7 +188,6 @@ export function ProposalDecisionWidget({
           </>
         )}
 
-        {/* Undo any non-pending decision → back to pending, clears reason */}
         {decision !== "pending" && (
           <button
             type="button"

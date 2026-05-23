@@ -6,18 +6,18 @@ import { ProposalDecisionWidget } from "./proposal-decision-widget";
 import type { AiSuggestionRun, AiProposalWithSources, ProposalType } from "@/types/database";
 
 interface Props {
-  params: { tenantId: string; engagementId: string; runId: string };
+  params: { tenantId: string; engagementId: string; fiscalYearId: string; runId: string };
 }
 
 const PROPOSAL_TYPE_LABELS: Record<ProposalType, string> = {
-  project:           "Projects",
-  person:            "People",
-  evidence:          "Evidence",
-  hours:             "Hours",
-  contractor:        "Contractors",
-  material:          "Materials",
+  project:            "Projects",
+  person:             "People",
+  evidence:           "Evidence",
+  hours:              "Hours",
+  contractor:         "Contractors",
+  material:           "Materials",
   government_support: "Government Support",
-  gap:               "Gaps",
+  gap:                "Gaps",
 };
 
 const PROPOSAL_TYPE_ORDER: ProposalType[] = [
@@ -32,11 +32,11 @@ const CONFIDENCE_STYLES = {
 };
 
 const RUN_STATUS_STYLES: Record<string, { label: string; style: string }> = {
-  new:               { label: "New",             style: "bg-blue-50 text-blue-700" },
-  resurfacing:       { label: "Seen before",     style: "bg-amber-50 text-amber-700" },
+  new:                { label: "New",                style: "bg-blue-50 text-blue-700" },
+  resurfacing:        { label: "Seen before",        style: "bg-amber-50 text-amber-700" },
   possible_duplicate: { label: "Possible duplicate", style: "bg-orange-50 text-orange-700" },
-  confirmed:         { label: "Confirmed",       style: "bg-emerald-50 text-emerald-700" },
-  superseded:        { label: "Superseded",      style: "bg-gray-100 text-gray-500" },
+  confirmed:          { label: "Confirmed",          style: "bg-emerald-50 text-emerald-700" },
+  superseded:         { label: "Superseded",         style: "bg-gray-100 text-gray-500" },
 };
 
 export default async function AiRunDetailPage({ params }: Props) {
@@ -53,25 +53,37 @@ export default async function AiRunDetailPage({ params }: Props) {
   const rows = (memberships ?? []) as Array<{ role: string }>;
   if (!rows.some((m) => isAgencyRole(m.role as never))) redirect("/unauthorized");
 
-  // Load run
+  // Verify fiscal year ownership
+  const { data: rawFy, error: fyError } = await supabase
+    .from("fiscal_years")
+    .select("label")
+    .eq("id", params.fiscalYearId)
+    .eq("engagement_id", params.engagementId)
+    .eq("tenant_id", params.tenantId)
+    .single();
+
+  if (fyError || !rawFy) notFound();
+  const fy = rawFy as unknown as { label: string };
+
+  // Load run — verify it belongs to this fiscal year + tenant
   const { data: rawRun, error: runError } = await supabase
     .from("ai_suggestion_runs")
     .select("*")
     .eq("id", params.runId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId)
     .single();
 
   if (runError || !rawRun) notFound();
   const run = rawRun as unknown as AiSuggestionRun;
 
-  // Load engagement
-  const { data: rawEng } = await supabase
+  const { data: engData } = await supabase
     .from("engagements")
     .select("title")
     .eq("id", params.engagementId)
     .eq("tenant_id", params.tenantId)
     .single();
-  const eng = rawEng as unknown as { title: string } | null;
+  const engTitle = (engData as unknown as { title: string } | null)?.title ?? "Engagement";
 
   const { data: tenantData } = await supabase
     .from("tenants")
@@ -85,12 +97,12 @@ export default async function AiRunDetailPage({ params }: Props) {
     .from("ai_proposals")
     .select("*, ai_suggestion_sources(*)")
     .eq("run_id", params.runId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId)
     .order("created_at", { ascending: true });
 
   const proposals = (rawProposals ?? []) as unknown as AiProposalWithSources[];
 
-  // Group by proposal_type
   const grouped = PROPOSAL_TYPE_ORDER.reduce<Record<string, AiProposalWithSources[]>>(
     (acc, type) => {
       acc[type] = proposals.filter((p) => p.proposal_type === type);
@@ -99,24 +111,28 @@ export default async function AiRunDetailPage({ params }: Props) {
     {}
   );
 
+  const yearBase = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
+
   return (
     <div className="px-6 sm:px-8 py-8 max-w-4xl mx-auto">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400 mb-6 flex-wrap">
         <Link href="/agency/clients" className="hover:text-gray-700 transition-colors">Clients</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[100px]">{tenantName}</Link>
+        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[80px]">{tenantName}</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[140px]">{eng?.title ?? "Engagement"}</Link>
+        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[120px]">{engTitle}</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/ai-runs`} className="hover:text-gray-700 transition-colors">AI Runs</Link>
+        <Link href={yearBase} className="hover:text-gray-700 transition-colors">{fy.label}</Link>
+        <span>/</span>
+        <Link href={`${yearBase}/ai-runs`} className="hover:text-gray-700 transition-colors">AI Runs</Link>
         <span>/</span>
         <span className="text-gray-700 font-medium">
           {new Date(run.created_at).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" })}
         </span>
       </nav>
 
-      {/* Truncation warning — prominent if present */}
+      {/* Truncation warning */}
       {run.truncation_warning && (
         <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
           <p className="text-sm font-semibold text-amber-800 mb-0.5">⚠ Partial results — response was truncated</p>
@@ -137,13 +153,13 @@ export default async function AiRunDetailPage({ params }: Props) {
               })}
             </h1>
             <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-            <span className="text-sm text-gray-400 font-mono">{run.model}</span>
-            {run.prompt_version && (
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-medium bg-gray-100 text-gray-500">
-                {run.prompt_version}
-              </span>
-            )}
-          </div>
+              <span className="text-sm text-gray-400 font-mono">{run.model}</span>
+              {run.prompt_version && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-mono font-medium bg-gray-100 text-gray-500">
+                  {run.prompt_version}
+                </span>
+              )}
+            </div>
           </div>
           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
             run.status === "completed" ? "bg-emerald-50 text-emerald-700" :
@@ -155,7 +171,6 @@ export default async function AiRunDetailPage({ params }: Props) {
           </span>
         </div>
 
-        {/* Run summary */}
         {run.summary && (
           <div className="mb-4">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Summary</p>
@@ -163,7 +178,6 @@ export default async function AiRunDetailPage({ params }: Props) {
           </div>
         )}
 
-        {/* Stats grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm pt-4 border-t border-gray-100">
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Sources</p>
@@ -191,7 +205,6 @@ export default async function AiRunDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* Activity months */}
         {run.activity_months && run.activity_months.length > 0 && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">SR&amp;ED Activity Months</p>
@@ -205,7 +218,6 @@ export default async function AiRunDetailPage({ params }: Props) {
           </div>
         )}
 
-        {/* TR sections */}
         {((run.tr_sections_supported?.length ?? 0) > 0 || (run.tr_sections_unsupported?.length ?? 0) > 0) && (
           <div className="mt-4 pt-4 border-t border-gray-100 grid sm:grid-cols-2 gap-4">
             {(run.tr_sections_supported?.length ?? 0) > 0 && (
@@ -235,7 +247,6 @@ export default async function AiRunDetailPage({ params }: Props) {
           </div>
         )}
 
-        {/* Error message */}
         {run.status === "failed" && run.error_message && (
           <div className="mt-4 pt-4 border-t border-gray-100">
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Error</p>
@@ -244,7 +255,7 @@ export default async function AiRunDetailPage({ params }: Props) {
         )}
       </div>
 
-      {/* Proposals grouped by type */}
+      {/* Proposals */}
       {proposals.length === 0 && run.status === "completed" && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-10 text-center">
           <p className="text-sm text-gray-400">No proposals were generated in this run.</p>
@@ -266,12 +277,11 @@ export default async function AiRunDetailPage({ params }: Props) {
 
             <div className="divide-y divide-gray-100">
               {group.map((proposal) => {
-                const rs = RUN_STATUS_STYLES[proposal.run_status] ?? RUN_STATUS_STYLES.new;
+                const rs   = RUN_STATUS_STYLES[proposal.run_status] ?? RUN_STATUS_STYLES.new;
                 const conf = CONFIDENCE_STYLES[proposal.confidence] ?? CONFIDENCE_STYLES.medium;
 
                 return (
                   <div key={proposal.id} className="px-5 py-4">
-                    {/* Proposal header */}
                     <div className="flex items-start gap-3 flex-wrap mb-2">
                       <p className="text-sm font-semibold text-gray-900 flex-1 min-w-0">
                         {proposal.title}
@@ -286,12 +296,10 @@ export default async function AiRunDetailPage({ params }: Props) {
                       </div>
                     </div>
 
-                    {/* Description */}
                     {proposal.description && (
                       <p className="text-sm text-gray-600 leading-relaxed mb-2">{proposal.description}</p>
                     )}
 
-                    {/* Meta fields */}
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-400 mb-2">
                       {proposal.proposed_project && (
                         <span>Project: <span className="text-gray-600">{proposal.proposed_project}</span></span>
@@ -307,12 +315,10 @@ export default async function AiRunDetailPage({ params }: Props) {
                       )}
                     </div>
 
-                    {/* Reason */}
                     {proposal.reason && (
                       <p className="text-xs text-gray-500 italic mb-2">{proposal.reason}</p>
                     )}
 
-                    {/* Source snippets */}
                     {proposal.ai_suggestion_sources.length > 0 && (
                       <div className="mt-2 space-y-1.5">
                         {proposal.ai_suggestion_sources.map((src) => (
@@ -329,7 +335,6 @@ export default async function AiRunDetailPage({ params }: Props) {
                       </div>
                     )}
 
-                    {/* Decision widget — captures optional reason for reject/defer */}
                     <ProposalDecisionWidget
                       proposalId={proposal.id}
                       tenantId={params.tenantId}
@@ -346,16 +351,10 @@ export default async function AiRunDetailPage({ params }: Props) {
 
       {/* Navigation */}
       <div className="mt-4 flex items-center gap-4 text-sm">
-        <Link
-          href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/proposals`}
-          className="text-gray-500 hover:text-gray-900 transition-colors"
-        >
+        <Link href={`${yearBase}/proposals`} className="text-gray-500 hover:text-gray-900 transition-colors">
           View All Proposals →
         </Link>
-        <Link
-          href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/context`}
-          className="text-gray-500 hover:text-gray-900 transition-colors"
-        >
+        <Link href={`${yearBase}/context`} className="text-gray-500 hover:text-gray-900 transition-colors">
           ← Context Sources
         </Link>
       </div>

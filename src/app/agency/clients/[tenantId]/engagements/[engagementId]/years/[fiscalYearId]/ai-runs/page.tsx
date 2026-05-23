@@ -5,7 +5,7 @@ import { isAgencyRole } from "@/lib/auth/permissions";
 import type { AiSuggestionRun } from "@/types/database";
 
 interface Props {
-  params: { tenantId: string; engagementId: string };
+  params: { tenantId: string; engagementId: string; fiscalYearId: string };
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -29,16 +29,25 @@ export default async function AiRunsPage({ params }: Props) {
   const rows = (memberships ?? []) as Array<{ role: string }>;
   if (!rows.some((m) => isAgencyRole(m.role as never))) redirect("/unauthorized");
 
-  // Load engagement
-  const { data: rawEng, error: engError } = await supabase
+  // Triple-ownership check on fiscal year
+  const { data: rawFy, error: fyError } = await supabase
+    .from("fiscal_years")
+    .select("label")
+    .eq("id", params.fiscalYearId)
+    .eq("engagement_id", params.engagementId)
+    .eq("tenant_id", params.tenantId)
+    .single();
+
+  if (fyError || !rawFy) notFound();
+  const fy = rawFy as unknown as { label: string };
+
+  const { data: engData } = await supabase
     .from("engagements")
     .select("title")
     .eq("id", params.engagementId)
     .eq("tenant_id", params.tenantId)
     .single();
-
-  if (engError || !rawEng) notFound();
-  const eng = rawEng as unknown as { title: string };
+  const engTitle = (engData as unknown as { title: string } | null)?.title ?? "Engagement";
 
   const { data: tenantData } = await supabase
     .from("tenants")
@@ -47,11 +56,11 @@ export default async function AiRunsPage({ params }: Props) {
     .single();
   const tenantName = (tenantData as unknown as { name: string } | null)?.name ?? "Client";
 
-  // Load runs
+  // Load runs for this fiscal year
   const { data: rawRuns } = await supabase
     .from("ai_suggestion_runs")
     .select("*")
-    .eq("engagement_id", params.engagementId)
+    .eq("fiscal_year_id", params.fiscalYearId)
     .eq("tenant_id", params.tenantId)
     .order("created_at", { ascending: false });
 
@@ -60,10 +69,7 @@ export default async function AiRunsPage({ params }: Props) {
   // Load proposal counts per run
   const runIds = runs.map((r) => r.id);
   const { data: proposalCounts } = runIds.length > 0
-    ? await supabase
-        .from("ai_proposals")
-        .select("run_id")
-        .in("run_id", runIds)
+    ? await supabase.from("ai_proposals").select("run_id").in("run_id", runIds)
     : { data: [] as Array<{ run_id: string }> };
 
   const countMap = (proposalCounts ?? []).reduce<Record<string, number>>((acc, row) => {
@@ -72,15 +78,19 @@ export default async function AiRunsPage({ params }: Props) {
     return acc;
   }, {});
 
+  const yearBase = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
+
   return (
     <div className="px-6 sm:px-8 py-8 max-w-5xl mx-auto">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400 mb-6 flex-wrap">
         <Link href="/agency/clients" className="hover:text-gray-700 transition-colors">Clients</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[120px]">{tenantName}</Link>
+        <Link href={`/agency/clients/${params.tenantId}`} className="hover:text-gray-700 transition-colors truncate max-w-[100px]">{tenantName}</Link>
         <span>/</span>
-        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[180px]">{eng.title}</Link>
+        <Link href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}`} className="hover:text-gray-700 transition-colors truncate max-w-[140px]">{engTitle}</Link>
+        <span>/</span>
+        <Link href={yearBase} className="hover:text-gray-700 transition-colors">{fy.label}</Link>
         <span>/</span>
         <span className="text-gray-700 font-medium">AI Runs</span>
       </nav>
@@ -89,11 +99,11 @@ export default async function AiRunsPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">AI Analysis Runs</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            Each run analyses context sources and proposes SR&ED items. Agency-only.
+            Runs for <span className="text-gray-600 font-medium">{fy.label}</span>. Each run analyses context sources and proposes SR&amp;ED items. Agency-only.
           </p>
         </div>
         <Link
-          href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/context`}
+          href={`${yearBase}/context`}
           className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity flex-shrink-0"
           style={{ backgroundColor: "#03CEA4" }}
         >
@@ -107,10 +117,7 @@ export default async function AiRunsPage({ params }: Props) {
             <p className="text-sm text-gray-500 mb-1">No AI runs yet.</p>
             <p className="text-xs text-gray-400">
               Add context sources and trigger the first run from the{" "}
-              <Link
-                href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/context`}
-                className="text-teal-600 hover:underline"
-              >
+              <Link href={`${yearBase}/context`} className="text-teal-600 hover:underline">
                 Context
               </Link>{" "}
               page.
@@ -134,19 +141,16 @@ export default async function AiRunsPage({ params }: Props) {
                   <tr key={run.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-5 py-3">
                       <Link
-                        href={`/agency/clients/${params.tenantId}/engagements/${params.engagementId}/ai-runs/${run.id}`}
+                        href={`${yearBase}/ai-runs/${run.id}`}
                         className="font-medium text-gray-900 hover:text-teal-700 transition-colors"
                       >
                         {new Date(run.created_at).toLocaleDateString("en-CA", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
+                          year: "numeric", month: "short", day: "numeric",
                         })}
                       </Link>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {new Date(run.created_at).toLocaleTimeString("en-CA", {
-                          hour: "2-digit",
-                          minute: "2-digit",
+                          hour: "2-digit", minute: "2-digit",
                         })}
                       </p>
                     </td>
