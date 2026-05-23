@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
-import { getDefaultRedirect, isAgencyRole } from "@/lib/auth/permissions";
-import type { MembershipWithTenant } from "@/types/database";
+import { isAgencyRole } from "@/lib/auth/permissions";
+import type { UserRole } from "@/types/database";
 
 const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/reset-password", "/unauthorized"];
 
@@ -29,14 +29,18 @@ export async function middleware(request: NextRequest) {
     return redirectResponse;
   }
 
-  // Load active memberships (needed for role-based routing)
-  const { data: memberships } = await supabase
+  // Load active memberships (role only — no tenant JOIN to avoid RLS/Edge Runtime conflicts)
+  const membershipResult = await supabase
     .from("tenant_memberships")
-    .select("*, tenant:tenants(*)")
+    .select("id, tenant_id, user_id, role, status")
     .eq("user_id", user.id)
     .eq("status", "active");
 
-  const activeMemberships = (memberships ?? []) as MembershipWithTenant[];
+  const activeMemberships = (membershipResult.data ?? []) as unknown as Array<{
+    tenant_id: string;
+    role: string;
+    status: string;
+  }>;
 
   // Helper: build a redirect that carries along any refreshed session cookies.
   function redirectWithCookies(destination: string | URL) {
@@ -54,7 +58,7 @@ export async function middleware(request: NextRequest) {
   // /agency routes require an active agency-role membership
   if (pathname.startsWith("/agency")) {
     const hasAgencyAccess = activeMemberships.some((m) =>
-      isAgencyRole(m.role)
+      isAgencyRole(m.role as UserRole)
     );
     if (!hasAgencyAccess) {
       return redirectWithCookies("/unauthorized");
@@ -70,7 +74,8 @@ export async function middleware(request: NextRequest) {
 
   // Root redirect: send logged-in users to their default landing page
   if (pathname === "/") {
-    return redirectWithCookies(getDefaultRedirect(activeMemberships));
+    const hasAgency = activeMemberships.some((m) => isAgencyRole(m.role as UserRole));
+    return redirectWithCookies(hasAgency ? "/agency" : "/workspace");
   }
 
   return supabaseResponse;
