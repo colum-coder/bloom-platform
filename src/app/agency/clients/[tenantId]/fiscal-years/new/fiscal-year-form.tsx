@@ -15,6 +15,11 @@ const STATUS_OPTIONS: Array<{ value: FiscalYearStatus; label: string }> = [
   { value: "archived", label: "Archived" },
 ];
 
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
 // Given a "YYYY-MM" month string (the fiscal year-end month), derive:
 //   startDate: first day of the same calendar month, one year prior
 //   endDate:   last day of the given month
@@ -46,14 +51,9 @@ function deriveDates(yearMonth: string): {
   return {
     startDate: fmt(startObj),
     endDate:   fmt(endObj),
-    label:     `FY ${y}`,
+    label:     `${MONTH_NAMES[m - 1]} ${y}`,
   };
 }
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 function formatDateRange(start: string, end: string): string {
   if (!start || !end) return "";
