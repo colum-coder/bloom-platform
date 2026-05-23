@@ -15,16 +15,83 @@ const STATUS_OPTIONS: Array<{ value: FiscalYearStatus; label: string }> = [
   { value: "archived", label: "Archived" },
 ];
 
+// Given a "YYYY-MM" month string (the fiscal year-end month), derive:
+//   startDate: first day of the same calendar month, one year prior
+//   endDate:   last day of the given month
+//   label:     "FY {year}" where year is the end year
+//
+// Example: yearMonth = "2025-09" (September 2025)
+//   → endDate   = 2025-09-30
+//   → startDate = 2024-10-01  (October 1 of the prior year)
+//   → label     = "FY 2025"
+function deriveDates(yearMonth: string): {
+  startDate: string;
+  endDate: string;
+  label: string;
+} {
+  const [y, m] = yearMonth.split("-").map(Number);
+
+  // Last day of the end month: day 0 of the following month rolls back to last day of this one
+  const endObj = new Date(y, m, 0); // e.g. new Date(2025, 9, 0) = Sep 30, 2025
+
+  // First day of the start month: same numeric month (0-indexed) of the prior year
+  // Month m (1-indexed Sep=9) used as 0-indexed = October → Oct 1 of year-1
+  const startObj = new Date(y - 1, m, 1); // e.g. new Date(2024, 9, 1) = Oct 1, 2024
+
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+
+  return {
+    startDate: fmt(startObj),
+    endDate:   fmt(endObj),
+    label:     `FY ${y}`,
+  };
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function formatDateRange(start: string, end: string): string {
+  if (!start || !end) return "";
+  const [sy, sm] = start.split("-").map(Number);
+  const [ey, em] = end.split("-").map(Number);
+  return `${MONTH_NAMES[sm - 1]} ${sy} – ${MONTH_NAMES[em - 1]} ${ey}`;
+}
+
 export function FiscalYearForm({ tenantId }: FiscalYearFormProps) {
   const router = useRouter();
 
-  const [label,     setLabel]     = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate,   setEndDate]   = useState("");
-  const [status,    setStatus]    = useState<FiscalYearStatus>("active");
-  const [notes,     setNotes]     = useState("");
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState<string | null>(null);
+  // yearEndMonth drives everything; label is auto-populated but editable
+  const [yearEndMonth, setYearEndMonth] = useState("");
+  const [label,        setLabel]        = useState("");
+  const [labelEdited,  setLabelEdited]  = useState(false); // track if user manually changed label
+  const [startDate,    setStartDate]    = useState("");
+  const [endDate,      setEndDate]      = useState("");
+  const [status,       setStatus]       = useState<FiscalYearStatus>("active");
+  const [notes,        setNotes]        = useState("");
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
+
+  function handleYearEndChange(value: string) {
+    setYearEndMonth(value);
+    if (!value) {
+      setStartDate("");
+      setEndDate("");
+      if (!labelEdited) setLabel("");
+      return;
+    }
+    const derived = deriveDates(value);
+    setStartDate(derived.startDate);
+    setEndDate(derived.endDate);
+    // Only auto-update label if the user hasn't manually typed one
+    if (!labelEdited) {
+      setLabel(derived.label);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -47,64 +114,60 @@ export function FiscalYearForm({ tenantId }: FiscalYearFormProps) {
     // On success, createFiscalYear calls redirect() — no further action needed
   }
 
+  const derivedRange = formatDateRange(startDate, endDate);
+  const canSubmit = yearEndMonth && label && startDate && endDate;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Label */}
+
+      {/* Fiscal year-end month — primary input */}
       <div>
         <label
-          htmlFor="label"
+          htmlFor="year-end-month"
+          className="block text-sm font-medium text-gray-700 mb-1.5"
+        >
+          Fiscal year-end month <span className="text-red-500">*</span>
+        </label>
+        <input
+          id="year-end-month"
+          type="month"
+          required
+          value={yearEndMonth}
+          onChange={(e) => handleYearEndChange(e.target.value)}
+          className="w-full sm:w-56 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          The month the fiscal year ends.
+          {derivedRange
+            ? <> The 12-month period will be <span className="text-gray-600 font-medium">{derivedRange}</span>.</>
+            : <> Start and end dates are calculated automatically.</>
+          }
+        </p>
+      </div>
+
+      {/* Label — auto-filled, editable */}
+      <div>
+        <label
+          htmlFor="fy-label"
           className="block text-sm font-medium text-gray-700 mb-1.5"
         >
           Label <span className="text-red-500">*</span>
         </label>
         <input
-          id="label"
+          id="fy-label"
           type="text"
           required
           value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. FY 2024 or 2023–2024"
-          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
+          onChange={(e) => {
+            setLabel(e.target.value);
+            setLabelEdited(true);
+          }}
+          placeholder="e.g. FY 2025"
+          className="w-full sm:w-56 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
         />
         <p className="text-xs text-gray-400 mt-1">
-          A short, human-readable label for this fiscal year.
+          Auto-filled from the year-end month. Edit if needed.
         </p>
-      </div>
-
-      {/* Date range */}
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div>
-          <label
-            htmlFor="start_date"
-            className="block text-sm font-medium text-gray-700 mb-1.5"
-          >
-            Start date <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="start_date"
-            type="date"
-            required
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
-          />
-        </div>
-        <div>
-          <label
-            htmlFor="end_date"
-            className="block text-sm font-medium text-gray-700 mb-1.5"
-          >
-            End date <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="end_date"
-            type="date"
-            required
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
-          />
-        </div>
       </div>
 
       {/* Status */}
@@ -158,7 +221,7 @@ export function FiscalYearForm({ tenantId }: FiscalYearFormProps) {
       <div className="flex items-center gap-3 pt-1">
         <button
           type="submit"
-          disabled={loading || !label || !startDate || !endDate}
+          disabled={loading || !canSubmit}
           className="rounded-lg px-5 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
           style={{ backgroundColor: "#03CEA4" }}
         >
