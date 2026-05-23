@@ -41,16 +41,39 @@ export default async function ClientTenantDetailPage({ params }: Props) {
 
   const tenantRow = tenant as Tenant;
 
-  // Load members of this tenant with their profile names
-  // The new "memberships: agency staff can view all in their client tenants"
-  // policy (003_phase1.sql) allows this query.
+  // Load members of this tenant.
+  // tenant_memberships.user_id → auth.users ← profiles.id is an indirect
+  // relationship that PostgREST cannot auto-join. Fetch memberships and
+  // profiles in two separate queries and merge client-side.
   const { data: members } = await supabase
     .from("tenant_memberships")
-    .select("*, profile:profiles(full_name)")
+    .select("*")
     .eq("tenant_id", params.tenantId)
     .order("created_at", { ascending: true });
 
-  const memberList = (members ?? []) as unknown as MembershipWithProfile[];
+  const rawMembers = (members ?? []) as unknown as Array<{
+    id: string; tenant_id: string; user_id: string;
+    role: string; status: string; created_by: string | null;
+    created_at: string; updated_at: string;
+  }>;
+
+  // Fetch profiles for all member user_ids (RLS: shared tenant members policy allows this)
+  const userIds = rawMembers.map((m) => m.user_id);
+  const { data: profileRows } = userIds.length > 0
+    ? await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .in("id", userIds)
+    : { data: [] as Array<{ id: string; full_name: string | null }> };
+
+  const profileMap = Object.fromEntries(
+    (profileRows ?? []).map((p) => [p.id, p])
+  );
+
+  const memberList: MembershipWithProfile[] = rawMembers.map((m) => ({
+    ...(m as unknown as MembershipWithProfile),
+    profile: profileMap[m.user_id] ?? null,
+  }));
 
   // Does the current user have an active membership in this tenant?
   // If so, show the "Switch to this workspace" button.
