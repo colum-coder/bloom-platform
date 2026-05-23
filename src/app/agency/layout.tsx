@@ -41,9 +41,9 @@ export default async function AgencyLayout({
 
   const activeMembership = activeMemberships.find(
     (m) => m.tenant_id === activeTenantId
-  )!;
+  ) ?? activeMemberships[0];
 
-  const isViewingClient = activeMembership.tenant.type === "client";
+  const isViewingClient = activeMembership?.tenant?.type === "client";
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#2B307E" }}>

@@ -36,13 +36,13 @@ export default async function AgencyDashboard() {
 
   const activeMembership = activeMemberships.find(
     (m) => m.tenant_id === activeTenantId
-  )!;
+  ) ?? activeMemberships[0];
 
   const clientMemberships = activeMemberships.filter(
-    (m) => m.tenant.type === "client"
+    (m) => m.tenant?.type === "client"
   );
 
-  const isViewingClient = activeMembership.tenant.type === "client";
+  const isViewingClient = activeMembership?.tenant?.type === "client";
 
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10">

@@ -24,17 +24,8 @@ export default async function ClientsListPage() {
   if (!memberships.some((m) => isAgencyRole(m.role as never)))
     redirect("/unauthorized");
 
-  // Fetch client tenants visible to this user (RLS: is_active_member)
-  // Include active memberships for the member count
-  const { data: tenants, error } = await supabase
-    .from("tenants")
-    .select("*, tenant_memberships!inner(id, status)")
-    .eq("type", "client")
-    .eq("tenant_memberships.status", "active")
-    .order("created_at", { ascending: false });
-
-  // Also fetch client tenants where inner join may have excluded rows with 0 active members
-  // Use a separate query to get all visible client tenants
+  // Fetch client tenants visible to this user (RLS: is_active_member).
+  // Include all memberships so we can count active ones per tenant.
   const { data: allClientTenants } = await supabase
     .from("tenants")
     .select("*, tenant_memberships(id, status)")

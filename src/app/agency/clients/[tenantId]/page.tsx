@@ -101,11 +101,6 @@ export default async function ClientTenantDetailPage({ params }: Props) {
           {myMembershipHere && (
             <Link
               href="/workspace"
-              onClick={async () => {
-                // Switching is handled by TenantSwitcher metadata write.
-                // This direct link just navigates to workspace — middleware
-                // will use the active_tenant_id from user_metadata.
-              }}
               className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
               style={{ backgroundColor: "#03CEA4" }}
             >
