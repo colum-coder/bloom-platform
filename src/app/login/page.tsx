@@ -32,7 +32,21 @@ function LoginForm() {
       return;
     }
 
-    window.location.href = redirectTo;
+    // Query memberships to determine the correct landing page directly,
+    // avoiding a root-redirect hop through middleware that can drop session cookies.
+    const { data: memberships } = await supabase
+      .from("tenant_memberships")
+      .select("role")
+      .eq("status", "active");
+
+    const agencyRoles = [
+      "agency_owner", "agency_admin", "agency_manager",
+      "agency_consultant", "agency_reviewer",
+    ];
+    const hasAgencyRole = memberships?.some((m) => agencyRoles.includes(m.role));
+    const destination = hasAgencyRole ? "/agency" : "/workspace";
+
+    window.location.href = redirectTo === "/" ? destination : redirectTo;
   }
 
   async function handleMagicLink() {
