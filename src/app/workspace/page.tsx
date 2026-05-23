@@ -2,10 +2,20 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/sign-out-button";
-import { TenantStatusBadge, RoleBadge } from "@/components/status-badge";
+import {
+  TenantStatusBadge,
+  RoleBadge,
+  EngagementStatusBadge,
+} from "@/components/status-badge";
 import { ModeBadge } from "@/components/mode-badge";
 import { isAgencyRole } from "@/lib/auth/permissions";
-import type { MembershipWithTenant } from "@/types/database";
+import type {
+  Engagement,
+  EngagementType,
+  FiscalYear,
+  MembershipWithTenant,
+  ServiceLine,
+} from "@/types/database";
 
 export default async function ClientWorkspace() {
   const supabase = createClient();
@@ -39,6 +49,32 @@ export default async function ClientWorkspace() {
   const isAgencyUser = activeMemberships.some((m) => isAgencyRole(m.role));
   const displayName =
     (user.user_metadata?.full_name as string | undefined) ?? user.email ?? "";
+
+  // ── Phase 2: load visible engagements (exclude drafts for client view) ───
+  // RLS allows all active members to SELECT all rows; we filter out drafts
+  // here at the application layer so clients don't see unpublished work.
+  // Agency users previewing the workspace see the same filtered list.
+  // Known limitation: a client user with direct DB access could still see
+  // draft rows via the anon key. A proper RLS draft gate can be added later.
+  type EngagementRow = Engagement & {
+    fiscal_year: Pick<FiscalYear, "id" | "label"> | null;
+    engagement_type: Pick<EngagementType, "id" | "name"> & {
+      service_line: Pick<ServiceLine, "id" | "name">;
+    };
+  };
+
+  const { data: rawEngagements } = await supabase
+    .from("engagements")
+    .select(
+      `*,
+       fiscal_year:fiscal_years(id, label),
+       engagement_type:engagement_types(id, name, service_line:service_lines(id, name))`
+    )
+    .eq("tenant_id", activeTenantId)
+    .neq("status", "draft")
+    .order("created_at", { ascending: false });
+
+  const visibleEngagements = (rawEngagements ?? []) as unknown as EngagementRow[];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -121,23 +157,56 @@ export default async function ClientWorkspace() {
           </div>
         </div>
 
-        {/* Placeholder sections */}
-        <div className="grid sm:grid-cols-2 gap-4">
-          <WorkspaceSection
-            title="Engagements"
-            description="Your SR&ED engagements and claim status will appear here."
-            phase="Phase 2"
-            color="#03CEA4"
-            icon={
+        {/* Engagements — real data (Phase 2) */}
+        <div
+          className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-4"
+          style={{ borderLeftWidth: 3, borderLeftColor: "#03CEA4" }}
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <span style={{ color: "#03CEA4" }} className="flex-shrink-0">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-            }
-          />
+            </span>
+            <h3 className="text-sm font-semibold text-gray-900">Engagements</h3>
+          </div>
+
+          {visibleEngagements.length === 0 ? (
+            <p className="text-sm text-gray-400 ml-8">
+              Your consultant hasn&apos;t shared any engagements yet.
+            </p>
+          ) : (
+            <div className="ml-8 divide-y divide-gray-100">
+              {visibleEngagements.map((eng) => (
+                <div
+                  key={eng.id}
+                  className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {eng.title}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {eng.engagement_type.service_line.name} —{" "}
+                      {eng.engagement_type.name}
+                      {eng.fiscal_year && (
+                        <span className="ml-1">· {eng.fiscal_year.label}</span>
+                      )}
+                    </p>
+                  </div>
+                  <EngagementStatusBadge status={eng.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Placeholder sections: Documents, Requests, Messages */}
+        <div className="grid sm:grid-cols-2 gap-4">
           <WorkspaceSection
             title="Documents"
             description="Documents requested by Bloom and your uploads will appear here."
-            phase="Phase 2"
+            phase="Phase 3"
             color="#2B307E"
             icon={
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -148,7 +217,7 @@ export default async function ClientWorkspace() {
           <WorkspaceSection
             title="Requests"
             description="Information requests and outstanding items from your Bloom consultant."
-            phase="Phase 2"
+            phase="Phase 3"
             color="#FF6A42"
             icon={
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -159,7 +228,7 @@ export default async function ClientWorkspace() {
           <WorkspaceSection
             title="Messages"
             description="Updates and comments from your Bloom team will appear here."
-            phase="Phase 2"
+            phase="Phase 3"
             color="#8B5CF6"
             icon={
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

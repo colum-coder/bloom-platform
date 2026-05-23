@@ -6,9 +6,18 @@ import {
   TenantStatusBadge,
   MembershipStatusBadge,
   RoleBadge,
+  FiscalYearStatusBadge,
+  EngagementStatusBadge,
 } from "@/components/status-badge";
 import { AddMemberForm } from "./add-member-form";
-import type { MembershipWithProfile, Tenant } from "@/types/database";
+import type {
+  Engagement,
+  EngagementType,
+  FiscalYear,
+  MembershipWithProfile,
+  ServiceLine,
+  Tenant,
+} from "@/types/database";
 
 interface Props {
   params: { tenantId: string };
@@ -89,6 +98,32 @@ export default async function ClientTenantDetailPage({ params }: Props) {
   const myMembershipHere = memberList.find(
     (m) => m.user_id === user.id && m.status === "active"
   );
+
+  // ── Phase 2: load fiscal years ──────────────────────────────────────────
+  const { data: rawFiscalYears } = await supabase
+    .from("fiscal_years")
+    .select("*")
+    .eq("tenant_id", params.tenantId)
+    .order("start_date", { ascending: false });
+
+  const fiscalYears = (rawFiscalYears ?? []) as unknown as FiscalYear[];
+
+  // ── Phase 2: load engagements with type, service line, and fiscal year ──
+  const { data: rawEngagements } = await supabase
+    .from("engagements")
+    .select(
+      `*,
+       fiscal_year:fiscal_years(label),
+       engagement_type:engagement_types(*, service_line:service_lines(*))`
+    )
+    .eq("tenant_id", params.tenantId)
+    .order("created_at", { ascending: false });
+
+  type EngagementRow = Engagement & {
+    fiscal_year: { label: string } | null;
+    engagement_type: EngagementType & { service_line: ServiceLine };
+  };
+  const engagements = (rawEngagements ?? []) as unknown as EngagementRow[];
 
   return (
     <div className="px-6 sm:px-8 py-8 max-w-5xl mx-auto">
@@ -205,11 +240,170 @@ export default async function ClientTenantDetailPage({ params }: Props) {
       </div>
 
       {/* Add member */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mb-5">
         <h2 className="text-sm font-semibold text-gray-900 mb-4">
           Add or Assign a User
         </h2>
         <AddMemberForm tenantId={params.tenantId} />
+      </div>
+
+      {/* ── Fiscal Years ──────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-5">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900">
+            Fiscal Years{" "}
+            <span className="text-gray-400 font-normal ml-1">({fiscalYears.length})</span>
+          </h2>
+          <Link
+            href={`/agency/clients/${params.tenantId}/fiscal-years/new`}
+            className="text-xs font-semibold text-white rounded-lg px-3 py-1.5 hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: "#03CEA4" }}
+          >
+            + Add
+          </Link>
+        </div>
+
+        {fiscalYears.length === 0 ? (
+          <div className="px-5 py-8 text-sm text-gray-400 text-center">
+            No fiscal years yet.{" "}
+            <Link
+              href={`/agency/clients/${params.tenantId}/fiscal-years/new`}
+              className="text-teal-600 hover:underline"
+            >
+              Add one
+            </Link>{" "}
+            before creating an SR&ED engagement.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Label
+                  </th>
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                    Period
+                  </th>
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {fiscalYears.map((fy) => (
+                  <tr key={fy.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 font-medium text-gray-900">{fy.label}</td>
+                    <td className="px-5 py-3 text-gray-500 hidden sm:table-cell">
+                      {new Date(fy.start_date).toLocaleDateString("en-CA", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                      {" – "}
+                      {new Date(fy.end_date).toLocaleDateString("en-CA", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </td>
+                    <td className="px-5 py-3">
+                      <FiscalYearStatusBadge status={fy.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Engagements ───────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900">
+            Engagements{" "}
+            <span className="text-gray-400 font-normal ml-1">({engagements.length})</span>
+          </h2>
+          <Link
+            href={`/agency/clients/${params.tenantId}/engagements/new`}
+            className="text-xs font-semibold text-white rounded-lg px-3 py-1.5 hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: "#03CEA4" }}
+          >
+            + New
+          </Link>
+        </div>
+
+        {engagements.length === 0 ? (
+          <div className="px-5 py-8 text-sm text-gray-400 text-center">
+            No engagements yet.{" "}
+            <Link
+              href={`/agency/clients/${params.tenantId}/engagements/new`}
+              className="text-teal-600 hover:underline"
+            >
+              Create the first one
+            </Link>
+            .
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Title
+                  </th>
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hidden md:table-cell">
+                    Type
+                  </th>
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hidden sm:table-cell">
+                    Fiscal Year
+                  </th>
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {engagements.map((eng) => (
+                  <tr
+                    key={eng.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-5 py-3">
+                      <Link
+                        href={`/agency/clients/${params.tenantId}/engagements/${eng.id}`}
+                        className="font-medium text-gray-900 hover:text-teal-700 transition-colors"
+                      >
+                        {eng.title}
+                      </Link>
+                      {/* Show type on mobile where the type column is hidden */}
+                      <p className="text-xs text-gray-400 mt-0.5 md:hidden">
+                        {eng.engagement_type.service_line.name} — {eng.engagement_type.name}
+                      </p>
+                    </td>
+                    <td className="px-5 py-3 text-gray-500 hidden md:table-cell">
+                      <span>{eng.engagement_type.name}</span>
+                      <span className="text-gray-400 ml-1 text-xs">
+                        ({eng.engagement_type.service_line.name})
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-500 hidden sm:table-cell">
+                      {eng.fiscal_year ? (
+                        eng.fiscal_year.label
+                      ) : (
+                        <span className="text-gray-400 italic text-xs">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <EngagementStatusBadge status={eng.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
