@@ -34,6 +34,14 @@ function LoginForm() {
     // On success, the server action calls redirect() — no further handling needed
   }
 
+  // Use NEXT_PUBLIC_APP_URL as the base for all auth email redirects.
+  // window.location.origin would embed the current device's URL (e.g. localhost)
+  // into the email link, making it unclickable on any other device or after
+  // the local server stops. NEXT_PUBLIC_APP_URL is the stable production URL.
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+
   async function handleForgotPassword() {
     if (!email) {
       setError("Enter your email address first.");
@@ -44,7 +52,7 @@ function LoginForm() {
 
     const supabase = createClient();
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+      redirectTo: `${appUrl}/auth/callback?next=/auth/reset-password`,
     });
 
     if (error) {
@@ -67,7 +75,7 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${appUrl}/auth/callback`,
       },
     });
 
