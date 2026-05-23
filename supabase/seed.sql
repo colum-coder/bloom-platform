@@ -11,25 +11,19 @@
 -- ──────────────────────────────────────────────
 -- STEP 1 — Create test users in Supabase Auth
 -- ──────────────────────────────────────────────
--- Option A (Dashboard):
---   Authentication > Users > Invite user
---   agency@bloomfunding.ca  — note the UUID assigned
---   client@testclient.ca    — note the UUID assigned
+-- Dashboard: Authentication > Users > Invite user (or set password directly)
+--   colum@bloomfunding.ca  — agency owner
+--   info@bloomfunding.ca   — client owner
 --
--- Option B (Supabase CLI):
---   supabase functions invoke admin-invite-user \
---     --body '{"email":"agency@bloomfunding.ca"}'
---
--- STEP 2 — Replace the placeholder UUIDs below with the real
---          UUIDs from the users created in Step 1, then run
---          this file in the SQL editor.
+-- STEP 2 — Replace the UUIDs below with the real UUIDs from
+--          auth.users and run this file in the SQL editor.
 -- ============================================================
 
 -- ──────────────────────────────────────────────
--- Placeholder UUIDs — REPLACE before running
+-- Confirmed UUIDs (from auth.users, 2026-05-23)
 -- ──────────────────────────────────────────────
--- AGENCY_USER_UUID   : the auth.users.id for agency@bloomfunding.ca
--- CLIENT_USER_UUID   : the auth.users.id for client@testclient.ca
+-- colum@bloomfunding.ca : 73a5d1a2-a011-441c-a52a-e178ec1f5fb4
+-- info@bloomfunding.ca  : adbcc147-2df8-4beb-b9c0-7cf3c2eeec69
 
 do $$
 declare
