@@ -62,11 +62,6 @@ export default async function ClientWorkspace() {
             <span className="text-sm text-gray-400 hidden sm:block truncate max-w-[160px]">
               {user.email}
             </span>
-            <button
-              className="text-sm font-medium text-gray-500 hover:text-gray-700"
-            >
-              {/* Sign out rendered as client component below */}
-            </button>
             <SignOutButton />
           </div>
         </div>
