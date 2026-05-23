@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isAgencyRole } from "@/lib/auth/permissions";
 import { TenantStatusBadge } from "@/components/status-badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { TenantWithMemberships } from "@/types/database";
 
 export default async function ClientsListPage() {
@@ -13,7 +15,7 @@ export default async function ClientsListPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Confirm agency role (layout also checks, but defence-in-depth)
+  // Defence-in-depth: confirm agency role (layout also checks)
   const { data: myMemberships } = await supabase
     .from("tenant_memberships")
     .select("role")
@@ -24,8 +26,8 @@ export default async function ClientsListPage() {
   if (!memberships.some((m) => isAgencyRole(m.role as never)))
     redirect("/unauthorized");
 
-  // Fetch client tenants visible to this user (RLS: is_active_member).
-  // Include all memberships so we can count active ones per tenant.
+  // Fetch all client tenants visible to this user (RLS: is_active_member).
+  // Include all memberships so we can display active member counts per tenant.
   const { data: allClientTenants } = await supabase
     .from("tenants")
     .select("*, tenant_memberships(id, status)")
@@ -35,93 +37,95 @@ export default async function ClientsListPage() {
   const clientTenants = (allClientTenants ?? []) as unknown as TenantWithMemberships[];
 
   return (
-    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
-      {/* Page header */}
-      <div className="mb-8 flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Client Tenants</h1>
-          <p className="text-white/60 text-sm mt-1">
-            {clientTenants.length} client tenant
-            {clientTenants.length !== 1 ? "s" : ""} visible to you
-          </p>
-        </div>
-        <Link
-          href="/agency/clients/new"
-          className="flex-shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
-          style={{ backgroundColor: "#FF6A42" }}
-        >
-          + New Client
-        </Link>
-      </div>
-
-      {clientTenants.length === 0 ? (
-        <div className="bg-white/5 rounded-2xl p-10 border border-white/10 text-center">
-          <p className="text-white/50 mb-4">No client tenants yet.</p>
+    <div className="px-6 sm:px-8 py-8 max-w-6xl mx-auto">
+      <PageHeader
+        title="Clients"
+        subtitle={
+          clientTenants.length > 0
+            ? `${clientTenants.length} client tenant${clientTenants.length !== 1 ? "s" : ""} visible to you`
+            : undefined
+        }
+        actions={
           <Link
             href="/agency/clients/new"
-            className="inline-block rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
-            style={{ backgroundColor: "#FF6A42" }}
+            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-bloom-orange hover:opacity-90 transition-opacity"
           >
-            Create First Client Tenant
+            <span aria-hidden="true">+</span> New Client
           </Link>
+        }
+      />
+
+      {clientTenants.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
+          <EmptyState
+            title="No client tenants yet"
+            description="Create your first client tenant to start managing SR&ED engagements."
+            action={
+              <Link
+                href="/agency/clients/new"
+                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white bg-bloom-orange hover:opacity-90 transition-opacity"
+              >
+                Create first client
+              </Link>
+            }
+          />
         </div>
       ) : (
-        <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
           {/* Table header */}
-          <div className="hidden md:grid grid-cols-[1fr_180px_110px_100px_80px_80px] gap-4 px-5 py-3 border-b border-white/10 text-xs font-semibold text-white/40 uppercase tracking-wider">
-            <span>Tenant</span>
-            <span>Slug</span>
-            <span>Status</span>
-            <span>Type</span>
-            <span>Members</span>
-            <span>Created</span>
+          <div className="hidden md:grid grid-cols-[1fr_180px_120px_80px_100px] gap-4 px-5 py-3 bg-gray-50 border-b border-gray-100">
+            {["Client", "Slug", "Status", "Members", "Created"].map((h) => (
+              <span
+                key={h}
+                className="text-xs font-semibold text-gray-500 uppercase tracking-wider"
+              >
+                {h}
+              </span>
+            ))}
           </div>
 
           {/* Rows */}
-          <div className="divide-y divide-white/10">
+          <div className="divide-y divide-gray-100">
             {clientTenants.map((tenant) => {
-              const activeMemberCount = tenant.tenant_memberships?.filter(
-                (m) => m.status === "active"
-              ).length ?? 0;
+              const activeMemberCount =
+                tenant.tenant_memberships?.filter((m) => m.status === "active")
+                  .length ?? 0;
 
               return (
                 <Link
                   key={tenant.id}
                   href={`/agency/clients/${tenant.id}`}
-                  className="grid md:grid-cols-[1fr_180px_110px_100px_80px_80px] gap-4 px-5 py-4 hover:bg-white/5 transition-colors items-center group"
+                  className="grid md:grid-cols-[1fr_180px_120px_80px_100px] gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors items-center group"
                 >
                   {/* Name */}
-                  <div>
-                    <p className="font-semibold text-white group-hover:text-white/90 truncate">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 group-hover:text-gray-700 truncate">
                       {tenant.name}
                     </p>
-                    <p className="text-xs text-white/40 md:hidden mt-0.5">{tenant.slug}</p>
+                    <p className="text-xs text-gray-400 md:hidden mt-0.5 font-mono truncate">
+                      {tenant.slug}
+                    </p>
                   </div>
 
                   {/* Slug */}
-                  <p className="hidden md:block text-sm text-white/50 truncate font-mono">
+                  <p className="hidden md:block text-sm text-gray-400 truncate font-mono">
                     {tenant.slug}
                   </p>
 
                   {/* Status */}
-                  <div className="hidden md:block">
+                  <div className="hidden md:flex">
                     <TenantStatusBadge status={tenant.status} />
                   </div>
 
-                  {/* Type */}
-                  <p className="hidden md:block text-sm text-white/50 capitalize">
-                    {tenant.type}
-                  </p>
-
-                  {/* Member count */}
-                  <p className="hidden md:block text-sm text-white/60 text-center">
+                  {/* Members */}
+                  <p className="hidden md:block text-sm text-gray-700 font-medium">
                     {activeMemberCount}
                   </p>
 
                   {/* Created */}
-                  <p className="hidden md:block text-xs text-white/40">
+                  <p className="hidden md:block text-xs text-gray-400">
                     {new Date(tenant.created_at).toLocaleDateString("en-CA", {
-                      year: "2-digit",
+                      year: "numeric",
                       month: "short",
                       day: "numeric",
                     })}
@@ -132,6 +136,6 @@ export default async function ClientsListPage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

@@ -9,9 +9,11 @@ import { isAgencyRole } from "@/lib/auth/permissions";
 interface TenantSwitcherProps {
   memberships: MembershipWithTenant[];
   activeTenantId: string;
+  /** When true the dropdown opens upward — use when the switcher sits near the bottom of the viewport (e.g. sidebar footer). */
+  dropUp?: boolean;
 }
 
-export function TenantSwitcher({ memberships, activeTenantId }: TenantSwitcherProps) {
+export function TenantSwitcher({ memberships, activeTenantId, dropUp = false }: TenantSwitcherProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -86,7 +88,7 @@ export function TenantSwitcher({ memberships, activeTenantId }: TenantSwitcherPr
       {open && otherMemberships.length > 0 && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 z-20 w-72 bg-white rounded-xl shadow-lg border border-gray-100 py-1 overflow-hidden">
+          <div className={`absolute left-0 z-20 w-72 bg-white rounded-xl shadow-lg border border-gray-100 py-1 overflow-hidden ${dropUp ? "bottom-full mb-1" : "top-full mt-1"}`}>
 
             {/* Agency options */}
             {agencyOptions.length > 0 && (

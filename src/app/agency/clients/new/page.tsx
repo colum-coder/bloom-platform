@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClientTenant } from "../actions";
 
@@ -15,19 +14,16 @@ function slugify(value: string) {
 }
 
 export default function NewClientTenantPage() {
-  const router = useRouter();
-  const [name, setName]       = useState("");
-  const [slug, setSlug]       = useState("");
+  const [name, setName]             = useState("");
+  const [slug, setSlug]             = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
-  const [status, setStatus]   = useState<"active" | "inactive">("active");
-  const [error, setError]     = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus]         = useState<"active" | "inactive">("active");
+  const [error, setError]           = useState<string | null>(null);
+  const [loading, setLoading]       = useState(false);
 
   function handleNameChange(value: string) {
     setName(value);
-    if (!slugEdited) {
-      setSlug(slugify(value));
-    }
+    if (!slugEdited) setSlug(slugify(value));
   }
 
   function handleSlugChange(value: string) {
@@ -46,34 +42,31 @@ export default function NewClientTenantPage() {
     formData.set("status", status);
 
     const result = await createClientTenant(formData);
-
-    // createClientTenant either redirects (success) or returns { error }
     if (result?.error) {
       setError(result.error);
       setLoading(false);
     }
-    // On success the server action calls redirect() — no additional handling needed
   }
 
   return (
-    <main className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+    <div className="px-6 sm:px-8 py-8 max-w-2xl mx-auto">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-white/40 mb-6">
-        <Link href="/agency/clients" className="hover:text-white transition-colors">
-          Client Tenants
+      <nav className="flex items-center gap-1.5 text-sm text-gray-400 mb-6">
+        <Link href="/agency/clients" className="hover:text-gray-700 transition-colors">
+          Clients
         </Link>
         <span>/</span>
-        <span className="text-white/70">New Client</span>
-      </div>
+        <span className="text-gray-700 font-medium">New Client</span>
+      </nav>
 
-      <h1 className="text-2xl font-bold text-white mb-8">Create Client Tenant</h1>
+      <h1 className="text-xl font-semibold text-gray-900 mb-6">Create Client Tenant</h1>
 
-      <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Client name */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-white/80 mb-1.5">
-              Client organisation name <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Client organisation name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -81,19 +74,17 @@ export default function NewClientTenantPage() {
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
               placeholder="e.g. Acme Corporation"
-              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ "--tw-ring-color": "#03CEA4" } as React.CSSProperties}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent transition-shadow"
             />
           </div>
 
           {/* Slug */}
           <div>
-            <label className="block text-sm font-medium text-white/80 mb-1.5">
-              Slug <span className="text-red-400">*</span>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Slug <span className="text-red-500">*</span>
             </label>
-            <div className="flex items-center gap-0 rounded-lg border border-white/20 bg-white/10 overflow-hidden focus-within:ring-2"
-                 style={{ "--tw-ring-color": "#03CEA4" } as React.CSSProperties}>
-              <span className="px-3 py-2 text-sm text-white/30 border-r border-white/20 flex-shrink-0">
+            <div className="flex items-center rounded-lg border border-gray-200 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-bloom-mint">
+              <span className="px-3 py-2 text-sm text-gray-400 border-r border-gray-200 bg-gray-50 select-none flex-shrink-0">
                 /
               </span>
               <input
@@ -104,67 +95,68 @@ export default function NewClientTenantPage() {
                 value={slug}
                 onChange={(e) => handleSlugChange(e.target.value)}
                 placeholder="acme-corporation"
-                className="flex-1 bg-transparent px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none font-mono"
+                className="flex-1 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none font-mono"
               />
             </div>
-            <p className="mt-1 text-xs text-white/40">
+            <p className="mt-1 text-xs text-gray-400">
               Lowercase letters, numbers, and hyphens only. Auto-generated from name.
             </p>
           </div>
 
           {/* Status */}
           <div>
-            <label className="block text-sm font-medium text-white/80 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Initial status
             </label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as "active" | "inactive")}
-              className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ "--tw-ring-color": "#03CEA4" } as React.CSSProperties}
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
             >
-              <option value="active" className="bg-[#2B307E]">Active</option>
-              <option value="inactive" className="bg-[#2B307E]">Inactive</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
             </select>
-            <p className="mt-1 text-xs text-white/40">
-              Active tenants are visible to their members. Inactive tenants are
-              hidden from clients but visible to agency staff.
+            <p className="mt-1 text-xs text-gray-400">
+              Active tenants are visible to their members. Inactive tenants are hidden
+              from clients but visible to agency staff.
             </p>
           </div>
 
-          {/* What will be created note */}
-          <div className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/60">
-            <p className="font-medium text-white/80 mb-1">What this creates</p>
-            <ul className="space-y-0.5 text-xs">
+          {/* What will be created */}
+          <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-sm">
+            <p className="font-medium text-gray-700 mb-1">What this creates</p>
+            <ul className="space-y-0.5 text-xs text-gray-500">
               <li>· A new client tenant with the name and slug above</li>
-              <li>· Your membership in this tenant as <strong className="text-white/80">Agency Manager</strong></li>
+              <li>
+                · Your membership in this tenant as{" "}
+                <strong className="text-gray-700">Agency Manager</strong>
+              </li>
             </ul>
           </div>
 
           {error && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          <div className="flex items-center gap-3 pt-2">
+          <div className="flex items-center gap-3 pt-1">
             <button
               type="submit"
               disabled={loading || !name || !slug}
-              className="rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-              style={{ backgroundColor: "#FF6A42" }}
+              className="rounded-lg px-5 py-2.5 text-sm font-semibold text-white bg-bloom-orange hover:opacity-90 transition-opacity disabled:opacity-50"
             >
               {loading ? "Creating…" : "Create Client Tenant"}
             </button>
             <Link
               href="/agency/clients"
-              className="text-sm text-white/50 hover:text-white transition-colors"
+              className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
             >
               Cancel
             </Link>
           </div>
         </form>
       </div>
-    </main>
+    </div>
   );
 }

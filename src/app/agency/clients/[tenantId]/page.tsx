@@ -2,7 +2,11 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isAgencyRole } from "@/lib/auth/permissions";
-import { TenantStatusBadge, MembershipStatusBadge, RoleBadge } from "@/components/status-badge";
+import {
+  TenantStatusBadge,
+  MembershipStatusBadge,
+  RoleBadge,
+} from "@/components/status-badge";
 import { AddMemberForm } from "./add-member-form";
 import type { MembershipWithProfile, Tenant } from "@/types/database";
 
@@ -18,7 +22,7 @@ export default async function ClientTenantDetailPage({ params }: Props) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Confirm the current user has an agency role
+  // Confirm agency role (layout also checks — defence in depth)
   const { data: myMemberships } = await supabase
     .from("tenant_memberships")
     .select("role")
@@ -41,10 +45,7 @@ export default async function ClientTenantDetailPage({ params }: Props) {
 
   const tenantRow = tenant as Tenant;
 
-  // Load members of this tenant.
-  // tenant_memberships.user_id → auth.users ← profiles.id is an indirect
-  // relationship that PostgREST cannot auto-join. Fetch memberships and
-  // profiles in two separate queries and merge client-side.
+  // Load memberships — separate query avoids indirect FK join issue
   const { data: members } = await supabase
     .from("tenant_memberships")
     .select("*")
@@ -52,19 +53,25 @@ export default async function ClientTenantDetailPage({ params }: Props) {
     .order("created_at", { ascending: true });
 
   const rawMembers = (members ?? []) as unknown as Array<{
-    id: string; tenant_id: string; user_id: string;
-    role: string; status: string; created_by: string | null;
-    created_at: string; updated_at: string;
+    id: string;
+    tenant_id: string;
+    user_id: string;
+    role: string;
+    status: string;
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
   }>;
 
-  // Fetch profiles for all member user_ids (RLS: shared tenant members policy allows this)
+  // Fetch profiles for all member user_ids
   const userIds = rawMembers.map((m) => m.user_id);
-  const { data: profileRows } = userIds.length > 0
-    ? await supabase
-        .from("profiles")
-        .select("id, full_name")
-        .in("id", userIds)
-    : { data: [] as Array<{ id: string; full_name: string | null }> };
+  const { data: profileRows } =
+    userIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", userIds)
+      : { data: [] as Array<{ id: string; full_name: string | null }> };
 
   const profileMap = Object.fromEntries(
     (profileRows ?? []).map((p) => [p.id, p])
@@ -75,62 +82,68 @@ export default async function ClientTenantDetailPage({ params }: Props) {
     profile: profileMap[m.user_id] ?? null,
   }));
 
-  // Does the current user have an active membership in this tenant?
-  // If so, show the "Switch to this workspace" button.
-  const myMembershipHere = memberList.find((m) => m.user_id === user.id && m.status === "active");
+  // Split members into client users and Bloom staff for separate display
+  const clientMembers = memberList.filter((m) => m.role.startsWith("client_"));
+  const agencyMembers = memberList.filter((m) => m.role.startsWith("agency_"));
+
+  const myMembershipHere = memberList.find(
+    (m) => m.user_id === user.id && m.status === "active"
+  );
 
   return (
-    <main className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+    <div className="px-6 sm:px-8 py-8 max-w-5xl mx-auto">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-white/40 mb-6">
-        <Link href="/agency/clients" className="hover:text-white transition-colors">
-          Client Tenants
+      <nav className="flex items-center gap-1.5 text-sm text-gray-400 mb-6">
+        <Link
+          href="/agency/clients"
+          className="hover:text-gray-700 transition-colors"
+        >
+          Clients
         </Link>
         <span>/</span>
-        <span className="text-white/70 truncate">{tenantRow.name}</span>
-      </div>
+        <span className="text-gray-700 font-medium truncate">{tenantRow.name}</span>
+      </nav>
 
-      {/* Tenant header */}
-      <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-white">{tenantRow.name}</h1>
-          <p className="text-white/50 text-sm font-mono mt-0.5">{tenantRow.slug}</p>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <TenantStatusBadge status={tenantRow.status} />
+      {/* Account header */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 mb-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              <h1 className="text-xl font-semibold text-gray-900">{tenantRow.name}</h1>
+              <TenantStatusBadge status={tenantRow.status} />
+            </div>
+            <p className="text-sm text-gray-400 font-mono">{tenantRow.slug}</p>
+          </div>
           {myMembershipHere && (
             <Link
               href="/workspace"
-              className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-80 transition-opacity"
+              className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white flex-shrink-0 hover:opacity-90 transition-opacity"
               style={{ backgroundColor: "#03CEA4" }}
             >
               Switch to Workspace ↗
             </Link>
           )}
         </div>
-      </div>
 
-      {/* Tenant details */}
-      <div className="bg-white/5 rounded-2xl border border-white/10 p-6 mb-6">
-        <h2 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-4">
-          Tenant Details
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+        {/* Detail grid */}
+        <div className="mt-5 pt-5 border-t border-gray-100 grid grid-cols-2 sm:grid-cols-4 gap-5 text-sm">
           <div>
-            <p className="text-white/40 text-xs mb-0.5">Name</p>
-            <p className="text-white font-medium">{tenantRow.name}</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              Type
+            </p>
+            <p className="text-gray-900 capitalize">{tenantRow.type}</p>
           </div>
           <div>
-            <p className="text-white/40 text-xs mb-0.5">Slug</p>
-            <p className="text-white font-mono">{tenantRow.slug}</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              Slug
+            </p>
+            <p className="text-gray-900 font-mono">{tenantRow.slug}</p>
           </div>
           <div>
-            <p className="text-white/40 text-xs mb-0.5">Type</p>
-            <p className="text-white capitalize">{tenantRow.type}</p>
-          </div>
-          <div>
-            <p className="text-white/40 text-xs mb-0.5">Created</p>
-            <p className="text-white">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              Created
+            </p>
+            <p className="text-gray-900">
               {new Date(tenantRow.created_at).toLocaleDateString("en-CA", {
                 year: "numeric",
                 month: "short",
@@ -138,65 +151,116 @@ export default async function ClientTenantDetailPage({ params }: Props) {
               })}
             </p>
           </div>
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              Total members
+            </p>
+            <p className="text-gray-900">{memberList.length}</p>
+          </div>
         </div>
       </div>
 
-      {/* Members list */}
-      <div className="bg-white/5 rounded-2xl border border-white/10 overflow-hidden mb-6">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h2 className="text-sm font-semibold text-white">
+      {/* Members */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden mb-5">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900">
             Members{" "}
-            <span className="text-white/40 font-normal ml-1">
+            <span className="text-gray-400 font-normal ml-1">
               ({memberList.length})
             </span>
           </h2>
         </div>
 
         {memberList.length === 0 ? (
-          <p className="px-6 py-8 text-sm text-white/40 text-center">
+          <div className="px-5 py-10 text-sm text-gray-400 text-center">
             No members yet. Use the form below to add someone.
-          </p>
+          </div>
         ) : (
-          <div className="divide-y divide-white/10">
-            {memberList.map((member) => (
-              <div
-                key={member.id}
-                className="flex items-center gap-4 px-6 py-3"
-              >
-                {/* Avatar initial */}
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                  style={{ backgroundColor: member.role.startsWith("agency") ? "#2B307E" : "#03CEA420", color: member.role.startsWith("agency") ? "white" : "#03CEA4" }}
-                >
-                  {(member.profile?.full_name ?? "?")[0].toUpperCase()}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
-                    {member.profile?.full_name ?? "Unknown user"}
-                    {member.user_id === user.id && (
-                      <span className="ml-2 text-xs text-white/40">(you)</span>
-                    )}
+          <>
+            {/* Client users section */}
+            {clientMembers.length > 0 && (
+              <>
+                <div className="px-5 py-2 bg-gray-50 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Client Users
                   </p>
                 </div>
+                <MemberRows members={clientMembers} currentUserId={user.id} />
+              </>
+            )}
 
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <RoleBadge role={member.role} />
-                  <MembershipStatusBadge status={member.status} />
+            {/* Bloom staff section */}
+            {agencyMembers.length > 0 && (
+              <>
+                <div className="px-5 py-2 bg-gray-50 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Bloom Staff
+                  </p>
                 </div>
-              </div>
-            ))}
-          </div>
+                <MemberRows members={agencyMembers} currentUserId={user.id} />
+              </>
+            )}
+          </>
         )}
       </div>
 
-      {/* Add member form */}
-      <div className="bg-white/5 rounded-2xl border border-white/10 p-6">
-        <h2 className="text-sm font-semibold text-white mb-4">
+      {/* Add member */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">
           Add or Assign a User
         </h2>
         <AddMemberForm tenantId={params.tenantId} />
       </div>
-    </main>
+    </div>
+  );
+}
+
+// ── MemberRows sub-component ───────────────────────────────────────────────
+
+function MemberRows({
+  members,
+  currentUserId,
+}: {
+  members: MembershipWithProfile[];
+  currentUserId: string;
+}) {
+  return (
+    <div className="divide-y divide-gray-100">
+      {members.map((member) => {
+        const name = member.profile?.full_name ?? "Unknown user";
+        const initial = name[0].toUpperCase();
+        const isAgency = member.role.startsWith("agency_");
+
+        return (
+          <div key={member.id} className="flex items-center gap-4 px-5 py-3">
+            {/* Avatar */}
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+              style={
+                isAgency
+                  ? { backgroundColor: "#EEF0FB", color: "#2B307E" }
+                  : { backgroundColor: "#E6F9F5", color: "#03CEA4" }
+              }
+            >
+              {initial}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">
+                {name}
+                {member.user_id === currentUserId && (
+                  <span className="ml-2 text-xs text-gray-400 font-normal">(you)</span>
+                )}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <RoleBadge role={member.role} />
+              <MembershipStatusBadge status={member.status} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

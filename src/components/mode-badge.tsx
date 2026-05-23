@@ -4,29 +4,24 @@ interface ModeBadgeProps {
 }
 
 /**
- * Small pill that makes the current operational context unambiguous.
- * Agency Mode → orange.  Client Workspace → teal.
+ * Small pill indicating the current operational context.
+ * Agency → orange tint.  Client workspace → teal tint.
+ * Designed for use on light backgrounds (workspace top nav, dashboard).
  */
 export function ModeBadge({ mode, clientName }: ModeBadgeProps) {
   if (mode === "agency") {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold tracking-wide"
-        style={{ backgroundColor: "#FF6A4220", color: "#FF6A42" }}
-      >
-        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#FF6A42" }} />
-        Agency Mode
+      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border bg-orange-50 text-orange-700 border-orange-200">
+        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0" />
+        Agency
       </span>
     );
   }
 
   return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold tracking-wide"
-      style={{ backgroundColor: "#03CEA420", color: "#03CEA4" }}
-    >
-      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#03CEA4" }} />
-      {clientName ? `Client: ${clientName}` : "Client Workspace"}
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold border bg-teal-50 text-teal-700 border-teal-200">
+      <span className="w-1.5 h-1.5 rounded-full bg-teal-500 flex-shrink-0" />
+      {clientName ? clientName : "Client Workspace"}
     </span>
   );
 }

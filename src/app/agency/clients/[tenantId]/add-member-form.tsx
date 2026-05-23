@@ -20,7 +20,6 @@ const AGENCY_ROLES: Array<{ value: UserRole; label: string }> = [
 
 interface AddMemberFormProps {
   tenantId: string;
-  onSuccess?: () => void;
 }
 
 export function AddMemberForm({ tenantId }: AddMemberFormProps) {
@@ -55,10 +54,10 @@ export function AddMemberForm({ tenantId }: AddMemberFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* Email */}
       <div className="grid sm:grid-cols-[1fr_180px_140px_auto] gap-3 items-end">
+        {/* Email */}
         <div>
-          <label className="block text-xs font-medium text-white/60 mb-1">
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">
             Email address
           </label>
           <input
@@ -67,28 +66,32 @@ export function AddMemberForm({ tenantId }: AddMemberFormProps) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="user@example.com"
-            className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:border-transparent"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
           />
         </div>
 
         {/* Role */}
         <div>
-          <label className="block text-xs font-medium text-white/60 mb-1">
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">
             Role
           </label>
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as UserRole)}
-            className="w-full rounded-lg border border-white/20 bg-[#2B307E] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
           >
             <optgroup label="Client Roles">
               {CLIENT_ROLES.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
               ))}
             </optgroup>
             <optgroup label="Bloom Staff">
               {AGENCY_ROLES.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
               ))}
             </optgroup>
           </select>
@@ -96,13 +99,13 @@ export function AddMemberForm({ tenantId }: AddMemberFormProps) {
 
         {/* Status */}
         <div>
-          <label className="block text-xs font-medium text-white/60 mb-1">
+          <label className="block text-xs font-medium text-gray-500 mb-1.5">
             Status
           </label>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as "active" | "invited")}
-            className="w-full rounded-lg border border-white/20 bg-[#2B307E] px-3 py-2 text-sm text-white focus:outline-none focus:ring-2"
+            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-bloom-mint focus:border-transparent"
           >
             <option value="active">Active</option>
             <option value="invited">Invited</option>
@@ -112,7 +115,7 @@ export function AddMemberForm({ tenantId }: AddMemberFormProps) {
         <button
           type="submit"
           disabled={loading || !email}
-          className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-80 transition-opacity disabled:opacity-50"
+          className="rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
           style={{ backgroundColor: "#03CEA4" }}
         >
           {loading ? "Adding…" : "Add"}
@@ -120,19 +123,19 @@ export function AddMemberForm({ tenantId }: AddMemberFormProps) {
       </div>
 
       {error && (
-        <p className="text-sm text-red-300 bg-red-500/10 rounded-lg px-3 py-2 border border-red-500/20">
+        <p className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2.5 border border-red-200">
           {error}
         </p>
       )}
       {success && (
-        <p className="text-sm text-green-300 bg-green-500/10 rounded-lg px-3 py-2 border border-green-500/20">
+        <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2.5 border border-emerald-200">
           ✓ {success}
         </p>
       )}
 
-      <p className="text-xs text-white/30">
-        <strong className="text-white/50">Note:</strong> The user must already have a Bloom account.
-        If they don&apos;t, ask them to visit the login page and click{" "}
+      <p className="text-xs text-gray-400">
+        <strong className="text-gray-500">Note:</strong> The user must already have a
+        Bloom account. If they don&apos;t, ask them to visit the login page and click{" "}
         <em>Send magic link</em> — this creates their account. Then add them here.
       </p>
     </form>
