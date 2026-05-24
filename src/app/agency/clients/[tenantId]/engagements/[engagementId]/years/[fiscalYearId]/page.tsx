@@ -56,6 +56,8 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
     { count: runCount },
     { count: proposalCount },
     { count: pendingCount },
+    { count: documentCount },
+    { count: aiReadyCount },
   ] = await Promise.all([
     supabase.from("context_sources").select("*", { count: "exact", head: true })
       .eq("fiscal_year_id", params.fiscalYearId).eq("status", "active"),
@@ -65,6 +67,11 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
       .eq("fiscal_year_id", params.fiscalYearId),
     supabase.from("ai_proposals").select("*", { count: "exact", head: true })
       .eq("fiscal_year_id", params.fiscalYearId).eq("decision", "pending"),
+    supabase.from("documents").select("*", { count: "exact", head: true })
+      .eq("fiscal_year_id", params.fiscalYearId).neq("status", "archived"),
+    supabase.from("documents").select("*", { count: "exact", head: true })
+      .eq("fiscal_year_id", params.fiscalYearId).neq("status", "archived")
+      .not("ai_text", "is", null),
   ]);
 
   const base = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
@@ -131,7 +138,7 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
       </div>
 
       {/* Workspace navigation cards */}
-      <div className="grid sm:grid-cols-3 gap-4">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <WorkspaceCard
           title="Context Sources"
           description="Source material the AI will analyse — technical narratives, meeting notes, prior claims, payroll."
@@ -168,6 +175,19 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
           icon={
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          }
+        />
+        <WorkspaceCard
+          title="Documents"
+          description="Uploaded files. AI-readable text is extracted automatically for PDFs and Word docs."
+          href={`${base}/documents`}
+          color="#6366F1"
+          count={documentCount ?? 0}
+          countLabel={`${aiReadyCount ?? 0} AI ready`}
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
             </svg>
           }
         />

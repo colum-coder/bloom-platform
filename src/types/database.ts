@@ -73,6 +73,32 @@ export type EngagementStatus =
   | "closed"
   | "archived";
 
+// Phase 3B enums
+export type DocumentType =
+  | "prior_claim"
+  | "technical_narrative"
+  | "meeting_notes"
+  | "project_discussion"
+  | "staff_note"
+  | "client_background"
+  | "technical_document"
+  | "financial_summary"
+  | "payroll_export"
+  | "timesheet"
+  | "contractor_invoice"
+  | "material_invoice"
+  | "email_thread"
+  | "cra_review_context"
+  | "other";
+
+export type DocumentStatus =
+  | "uploaded"
+  | "needs_review"
+  | "reviewed"
+  | "accepted"
+  | "superseded"
+  | "archived";
+
 export type AgreementStatus =
   | "draft"
   | "active"
@@ -183,6 +209,12 @@ export interface ContextSource {
   client_visible: boolean;
   status: ContextSourceStatus;
   uploaded_by: string | null;
+  /**
+   * Phase 3B: optional link to the uploaded document this source was created from.
+   * Provides traceability: AI proposal → snippet → context source → document → file.
+   */
+  document_id: string | null;
+  document_version_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -232,6 +264,7 @@ export interface AiProposal {
   decision: ProposalDecision;
   /** Optional reason recorded when rejecting or deferring. Cleared on undo. */
   decision_reason: string | null;
+  // Note: context_sources also has document_id and document_version_id (see ContextSource)
   run_status: ProposalRunStatus;
   duplicate_of: string | null;
   reviewed_by: string | null;
@@ -282,10 +315,65 @@ export interface FiscalYearWithEngagement extends FiscalYear {
   engagement: Pick<Engagement, "id" | "title" | "tenant_id">;
 }
 
+// Phase 3B table row types
+
+export interface Document {
+  id: string;
+  /** Primary anchor — the specific SR&ED claim year */
+  fiscal_year_id: string;
+  /** Denormalized convenience */
+  engagement_id: string;
+  tenant_id: string;
+  title: string;
+  description: string | null;
+  /**
+   * The exact text Claude reads during Project Discovery analysis.
+   * Auto-extracted on upload for .txt/.csv/.pdf/.docx.
+   * Manually entered for other file types (images, spreadsheets, etc.).
+   * NULL = "Needs Text" — document is not yet AI-ready.
+   */
+  ai_text: string | null;
+  document_type: DocumentType;
+  /** Free-form tags stored as a text array */
+  tags: string[];
+  status: DocumentStatus;
+  client_visible: boolean;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentVersion {
+  id: string;
+  document_id: string;
+  fiscal_year_id: string;
+  engagement_id: string;
+  tenant_id: string;
+  version_number: number;
+  file_name: string;
+  file_type: string;
+  file_size_bytes: number;
+  /** Full path in the private 'documents' Supabase Storage bucket */
+  storage_path: string;
+  uploaded_by: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 // Phase 3A joined types
 
 export interface AiProposalWithSources extends AiProposal {
   ai_suggestion_sources: AiSuggestionSource[];
+}
+
+// Phase 3B joined types
+
+export interface DocumentWithVersions extends Document {
+  document_versions: DocumentVersion[];
+}
+
+export interface ContextSourceWithDocument extends ContextSource {
+  document: Pick<Document, "id" | "title"> | null;
 }
 
 // ── Supabase Database generic type (used with createClient<Database>) ──────
@@ -328,6 +416,17 @@ export interface Database {
         Row: AiSuggestionSource;
         Insert: Omit<AiSuggestionSource, "id" | "created_at">;
         Update: Partial<Omit<AiSuggestionSource, "id">>;
+      };
+      // Phase 3B
+      documents: {
+        Row: Document;
+        Insert: Omit<Document, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<Document, "id">>;
+      };
+      document_versions: {
+        Row: DocumentVersion;
+        Insert: Omit<DocumentVersion, "id" | "created_at">;
+        Update: Partial<Omit<DocumentVersion, "id">>;
       };
       // Phase 2
       service_lines: {
