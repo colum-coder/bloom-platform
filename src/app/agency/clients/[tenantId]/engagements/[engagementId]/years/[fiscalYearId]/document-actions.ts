@@ -66,14 +66,14 @@ async function extractText(buffer: Buffer, ext: string): Promise<string | null> 
     }
 
     if (ext === ".pdf") {
-      // pdf-parse v2 uses a class-based API: new PDFParse({ data }) → .getText()
-      // Dynamic import hits the ESM path which is what this package exports.
-      const { PDFParse } = await import("pdf-parse");
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await parser.getText();
-      await parser.destroy();
-      const text = result.text?.trim();
-      return text || null; // empty = scanned PDF → Bloom enters manually
+      // unpdf wraps pdfjs-dist and is designed for Node.js/Edge production use.
+      // Returns an array of per-page strings; join them for the full document text.
+      const { extractText } = await import("unpdf");
+      const { text: pages } = await extractText(new Uint8Array(buffer), {
+        mergePages: true,
+      });
+      const text = (Array.isArray(pages) ? pages.join("\n") : pages ?? "").trim();
+      return text || null; // empty = scanned/image PDF → Bloom enters manually
     }
 
     if (ext === ".docx") {
