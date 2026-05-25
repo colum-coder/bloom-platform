@@ -293,6 +293,14 @@ function Line246Editor({
   value: Line246Content;
   onChange: (v: Line246Content) => void;
 }) {
+  const totalWords =
+    countWords(value.results ?? "") +
+    countWords(value.conclusions ?? "") +
+    countWords(value.what_did_not_work ?? "") +
+    countWords(value.future_research ?? "") +
+    countWords(value.advancement_statement ?? "");
+  const overLimit = totalWords > 350;
+
   return (
     <div className="space-y-4">
       {LINE_246_FIELDS.map(({ key, label, placeholder, rows }) => (
@@ -306,13 +314,13 @@ function Line246Editor({
               placeholder-gray-400 focus:border-gray-400 focus:outline-none resize-y leading-relaxed"
             placeholder={placeholder}
           />
-          {key === "advancement_statement" && (
-            <p className="text-xs text-gray-400">
-              {countWords(value.advancement_statement ?? "")} words
-            </p>
-          )}
         </div>
       ))}
+      {/* Total word count across all Line 246 fields */}
+      <p className={`text-xs ${overLimit ? "text-amber-600 font-medium" : "text-gray-400"}`}>
+        {totalWords} / 350 words total
+        {overLimit && " — consider condensing; CRA guidance recommends ≤ 350 words for Line 246"}
+      </p>
     </div>
   );
 }
@@ -467,6 +475,14 @@ function renderLine244ReadOnly(content: Line244Content) {
 }
 
 function renderLine246ReadOnly(content: Line246Content) {
+  const totalWords =
+    countWords(content.results ?? "") +
+    countWords(content.conclusions ?? "") +
+    countWords(content.what_did_not_work ?? "") +
+    countWords(content.future_research ?? "") +
+    countWords(content.advancement_statement ?? "");
+  const overLimit = totalWords > 350;
+
   return (
     <div className="space-y-4">
       <SectionBlock label="Results"                           value={content.results ?? (content as any).uncertainty_statement ?? ""} />
@@ -474,6 +490,11 @@ function renderLine246ReadOnly(content: Line246Content) {
       <SectionBlock label="What Did Not Work"                 value={content.what_did_not_work ?? (content as any).standard_practice_gap ?? ""} />
       <SectionBlock label="Future Research"                   value={content.future_research ?? ""} />
       <SectionBlock label="Advancement Achieved or Attempted" value={content.advancement_statement ?? ""} />
+      {totalWords > 0 && (
+        <p className={`text-xs pt-1 ${overLimit ? "text-amber-600 font-medium" : "text-gray-400"}`}>
+          {totalWords} words total{overLimit ? " — over 350-word guidance" : ""}
+        </p>
+      )}
     </div>
   );
 }

@@ -34,6 +34,18 @@ const STATUS_STYLES: Record<string, string> = {
   failed:    "bg-red-50 text-red-700",
 };
 
+const CONFIDENCE_STYLES: Record<string, string> = {
+  high:   "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  medium: "bg-amber-50 text-amber-700 border border-amber-200",
+  low:    "bg-red-50 text-red-600 border border-red-200",
+};
+
+const CONFIDENCE_LABELS: Record<string, string> = {
+  high:   "High",
+  medium: "Medium",
+  low:    "Low",
+};
+
 export default async function DiscoveryRunDetailPage({ params }: Props) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -66,13 +78,13 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
   // Load projects for this run
   const { data: rawProjects } = await supabase
     .from("sred_projects")
-    .select("id, project_name, decision, decision_reason, line_242_ai_draft, line_246_ai_draft, created_at")
+    .select("id, project_name, confidence, decision, decision_reason, line_242_ai_draft, line_246_ai_draft, created_at")
     .eq("run_id", params.runId)
     .eq("tenant_id", params.tenantId)
     .order("created_at", { ascending: true });
 
   const projects = (rawProjects ?? []) as unknown as Array<
-    Pick<SredProject, "id" | "project_name" | "decision" | "decision_reason" | "line_242_ai_draft" | "line_246_ai_draft" | "created_at">
+    Pick<SredProject, "id" | "project_name" | "confidence" | "decision" | "decision_reason" | "line_242_ai_draft" | "line_246_ai_draft" | "created_at">
   >;
 
   // When zero projects on a completed run, fetch the included documents for diagnostics
@@ -200,7 +212,12 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
           </h2>
           {projects.map((project, idx) => {
             const hasLine242 = !!project.line_242_ai_draft;
-            const advancement = project.line_242_ai_draft?.narrative;
+            // v3: use advancement_statement from line_246, or combined_draft from line_242
+            // v1/v2 fallback: narrative field
+            const preview =
+              project.line_246_ai_draft?.advancement_statement ||
+              project.line_242_ai_draft?.combined_draft ||
+              project.line_242_ai_draft?.narrative;
 
             return (
               <Link
@@ -218,16 +235,25 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
                       {project.project_name}
                     </h3>
                   </div>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold flex-shrink-0 ${
-                    DECISION_STYLES[project.decision] ?? "bg-gray-100 text-gray-500"
-                  }`}>
-                    {DECISION_LABELS[project.decision] ?? project.decision}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
+                    {project.confidence && (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                        CONFIDENCE_STYLES[project.confidence] ?? ""
+                      }`}>
+                        {CONFIDENCE_LABELS[project.confidence]} confidence
+                      </span>
+                    )}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                      DECISION_STYLES[project.decision] ?? "bg-gray-100 text-gray-500"
+                    }`}>
+                      {DECISION_LABELS[project.decision] ?? project.decision}
+                    </span>
+                  </div>
                 </div>
 
-                {advancement && (
+                {preview && (
                   <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 ml-6">
-                    {advancement}
+                    {preview}
                   </p>
                 )}
 

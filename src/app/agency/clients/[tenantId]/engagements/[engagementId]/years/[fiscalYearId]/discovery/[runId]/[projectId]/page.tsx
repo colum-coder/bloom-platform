@@ -34,6 +34,18 @@ const DECISION_LABELS: Record<string, string> = {
   deferred: "Deferred",
 };
 
+const CONFIDENCE_STYLES: Record<string, string> = {
+  high:   "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  medium: "bg-amber-50 text-amber-700 border border-amber-200",
+  low:    "bg-red-50 text-red-600 border border-red-200",
+};
+
+const CONFIDENCE_LABELS: Record<string, string> = {
+  high:   "High confidence",
+  medium: "Medium confidence",
+  low:    "Low confidence",
+};
+
 const RELATIONSHIP_LABELS: Record<string, string> = {
   primary_evidence:   "Primary Evidence",
   supporting_evidence:"Supporting Evidence",
@@ -68,7 +80,7 @@ export default async function ProjectDetailPage({ params }: Props) {
   const { data: rawProject, error: projError } = await supabase
     .from("sred_projects")
     .select(
-      `id, project_name, decision, decision_reason, reviewed_at,
+      `id, project_name, confidence, decision, decision_reason, reviewed_at,
        line_242_ai_draft, line_244_ai_draft, line_246_ai_draft, section_c_hints_ai_draft,
        line_242_edited, line_244_edited, line_246_edited, section_c_hints_edited,
        created_at, updated_at`
@@ -145,12 +157,21 @@ export default async function ProjectDetailPage({ params }: Props) {
             <h1 className="text-xl font-semibold text-gray-900">{project.project_name}</h1>
             <p className="text-xs text-gray-400 mt-1">SR&amp;ED Project · T661 Part 2</p>
           </div>
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold flex-shrink-0 ${
-            DECISION_STYLES[project.decision] ?? "bg-gray-100 text-gray-500"
-          }`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
-            {DECISION_LABELS[project.decision] ?? project.decision}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            {project.confidence && (
+              <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${
+                CONFIDENCE_STYLES[project.confidence] ?? ""
+              }`}>
+                {CONFIDENCE_LABELS[project.confidence]}
+              </span>
+            )}
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${
+              DECISION_STYLES[project.decision] ?? "bg-gray-100 text-gray-500"
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70" />
+              {DECISION_LABELS[project.decision] ?? project.decision}
+            </span>
+          </div>
         </div>
 
         {/* Decision controls */}
