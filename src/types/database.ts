@@ -376,6 +376,149 @@ export interface ContextSourceWithDocument extends ContextSource {
   document: Pick<Document, "id" | "title"> | null;
 }
 
+// ── Phase 3C enums ─────────────────────────────────────────────────────────
+
+export type DiscoveryRunStatus = "pending" | "running" | "completed" | "failed";
+
+export type SredProjectDecision = "pending" | "accepted" | "rejected" | "deferred";
+
+export type DocumentRelationshipType =
+  | "primary_evidence"
+  | "supporting_evidence"
+  | "financial_record"
+  | "personnel_record"
+  | "prior_art";
+
+export type SupportedLine =
+  | "line_242"
+  | "line_244"
+  | "line_246"
+  | "section_c"
+  | "multiple";
+
+// ── Phase 3C T661 content schemas ─────────────────────────────────────────
+//
+// These are the jsonb field schemas stored in sred_projects.
+// The *_ai_draft variants are immutable after creation.
+// The *_edited variants start as null and are written by Bloom.
+
+export interface Line242Content {
+  /** Advancement sought — free-form narrative describing the scientific or
+   *  technological advancement the project was seeking to achieve. */
+  narrative: string;
+}
+
+export interface Line244MonthEntry {
+  /** "YYYY-MM" */
+  month: string;
+  /** Description of SR&ED activities performed in this month, or the
+   *  standard placeholder if no activity is evidenced. */
+  activities: string;
+}
+
+export interface Line244Content {
+  /** One entry per fiscal year month, in chronological order. */
+  monthly_breakdown: Line244MonthEntry[];
+  /** 2–3 sentence summary of work performed across the full fiscal year. */
+  summary: string;
+}
+
+export interface Line246Content {
+  /** Direct statement of the specific technological uncertainty. */
+  uncertainty_statement: string;
+  /** How the claimant approached resolving the uncertainty. */
+  approach_description: string;
+  /** Why standard practice or public knowledge was insufficient. */
+  standard_practice_gap: string;
+}
+
+export interface SectionCHint {
+  /** Technical Report section (e.g. "Work performed", "Results and conclusions") */
+  section: string;
+  /** Specific, actionable advice for the Bloom consultant */
+  hint: string;
+}
+
+// ── Phase 3C table row types ───────────────────────────────────────────────
+
+export interface DiscoveryRun {
+  id: string;
+  fiscal_year_id: string;
+  engagement_id: string;
+  tenant_id: string;
+  triggered_by: string | null;
+  /** IDs of AI-ready documents included in this run */
+  document_ids: string[];
+  /** IDs of active context sources included in this run */
+  context_source_ids: string[];
+  model: string;
+  prompt_version: string | null;
+  status: DiscoveryRunStatus;
+  run_summary: string | null;
+  error_message: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface SredProject {
+  id: string;
+  run_id: string;
+  fiscal_year_id: string;
+  engagement_id: string;
+  tenant_id: string;
+  project_name: string;
+  decision: SredProjectDecision;
+  decision_reason: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  /** T661 Part 2, Line 242 — AI draft (immutable) */
+  line_242_ai_draft: Line242Content | null;
+  /** T661 Part 2, Line 244 — AI draft (immutable) */
+  line_244_ai_draft: Line244Content | null;
+  /** T661 Part 2, Line 246 — AI draft (immutable) */
+  line_246_ai_draft: Line246Content | null;
+  /** Section C hints — AI draft (immutable) */
+  section_c_hints_ai_draft: SectionCHint[] | null;
+  /** Bloom-edited Line 242 — null until Bloom makes edits */
+  line_242_edited: Line242Content | null;
+  /** Bloom-edited Line 244 — null until Bloom makes edits */
+  line_244_edited: Line244Content | null;
+  /** Bloom-edited Line 246 — null until Bloom makes edits */
+  line_246_edited: Line246Content | null;
+  /** Bloom-edited Section C hints — null until Bloom makes edits */
+  section_c_hints_edited: SectionCHint[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectDocumentRelationship {
+  id: string;
+  project_id: string;
+  document_id: string;
+  tenant_id: string;
+  relationship_type: DocumentRelationshipType;
+  supports_line: SupportedLine | null;
+  supports_section: string | null;
+  relevance_note: string | null;
+  created_at: string;
+}
+
+// Phase 3C joined types
+
+export interface SredProjectWithRelationships extends SredProject {
+  project_document_relationships: Array<
+    ProjectDocumentRelationship & {
+      document: Pick<Document, "id" | "title" | "document_type"> | null;
+    }
+  >;
+}
+
+export interface DiscoveryRunWithProjects extends DiscoveryRun {
+  sred_projects: SredProject[];
+}
+
 // ── Supabase Database generic type (used with createClient<Database>) ──────
 
 export interface Database {

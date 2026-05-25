@@ -50,28 +50,34 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
     .single();
   const tenantName = (tenantData as unknown as { name: string } | null)?.name ?? "Client";
 
-  // Summary counts
+  // Summary counts — primary workspace cards + legacy tools
   const [
     { count: sourceCount },
+    { count: documentCount },
+    { count: aiReadyCount },
+    { count: discoveryRunCount },
+    { count: acceptedProjectCount },
     { count: runCount },
     { count: proposalCount },
     { count: pendingCount },
-    { count: documentCount },
-    { count: aiReadyCount },
   ] = await Promise.all([
     supabase.from("context_sources").select("*", { count: "exact", head: true })
       .eq("fiscal_year_id", params.fiscalYearId).eq("status", "active"),
+    supabase.from("documents").select("*", { count: "exact", head: true })
+      .eq("fiscal_year_id", params.fiscalYearId).neq("status", "archived"),
+    supabase.from("documents").select("*", { count: "exact", head: true })
+      .eq("fiscal_year_id", params.fiscalYearId).neq("status", "archived")
+      .not("ai_text", "is", null),
+    supabase.from("discovery_runs").select("*", { count: "exact", head: true })
+      .eq("fiscal_year_id", params.fiscalYearId).eq("status", "completed"),
+    supabase.from("sred_projects").select("*", { count: "exact", head: true })
+      .eq("fiscal_year_id", params.fiscalYearId).eq("decision", "accepted"),
     supabase.from("ai_suggestion_runs").select("*", { count: "exact", head: true })
       .eq("fiscal_year_id", params.fiscalYearId),
     supabase.from("ai_proposals").select("*", { count: "exact", head: true })
       .eq("fiscal_year_id", params.fiscalYearId),
     supabase.from("ai_proposals").select("*", { count: "exact", head: true })
       .eq("fiscal_year_id", params.fiscalYearId).eq("decision", "pending"),
-    supabase.from("documents").select("*", { count: "exact", head: true })
-      .eq("fiscal_year_id", params.fiscalYearId).neq("status", "archived"),
-    supabase.from("documents").select("*", { count: "exact", head: true })
-      .eq("fiscal_year_id", params.fiscalYearId).neq("status", "archived")
-      .not("ai_text", "is", null),
   ]);
 
   const base = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
@@ -109,20 +115,27 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
             </p>
           </div>
           <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Documents</p>
+            <p className="font-medium text-gray-900">
+              {documentCount ?? 0}
+              {(aiReadyCount ?? 0) > 0 && (
+                <span className="ml-1.5 text-xs font-normal text-emerald-600">
+                  {aiReadyCount} AI ready
+                </span>
+              )}
+            </p>
+          </div>
+          <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Sources</p>
             <p className="font-medium text-gray-900">{sourceCount ?? 0}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">AI Runs</p>
-            <p className="font-medium text-gray-900">{runCount ?? 0}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Proposals</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Discovery</p>
             <p className="font-medium text-gray-900">
-              {proposalCount ?? 0}
-              {(pendingCount ?? 0) > 0 && (
-                <span className="ml-1.5 text-xs font-normal text-amber-600">
-                  ({pendingCount} pending)
+              {discoveryRunCount ?? 0} {(discoveryRunCount ?? 0) === 1 ? "run" : "runs"}
+              {(acceptedProjectCount ?? 0) > 0 && (
+                <span className="ml-1.5 text-xs font-normal text-emerald-600">
+                  {acceptedProjectCount} accepted
                 </span>
               )}
             </p>
@@ -137,11 +150,24 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
         )}
       </div>
 
-      {/* Workspace navigation cards */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── Primary workspace cards ─────────────────────────────────────── */}
+      <div className="grid sm:grid-cols-3 gap-4 mb-4">
+        <WorkspaceCard
+          title="Documents"
+          description="Upload client files. AI text is extracted automatically from PDFs and Word docs for analysis."
+          href={`${base}/documents`}
+          color="#6366F1"
+          count={documentCount ?? 0}
+          countLabel={`${aiReadyCount ?? 0} AI ready`}
+          icon={
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+          }
+        />
         <WorkspaceCard
           title="Context Sources"
-          description="Source material the AI will analyse — technical narratives, meeting notes, prior claims, payroll."
+          description="Typed source material — meeting notes, technical narratives, prior claims, payroll summaries."
           href={`${base}/context`}
           color="#03CEA4"
           count={sourceCount ?? 0}
@@ -153,44 +179,45 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
           }
         />
         <WorkspaceCard
-          title="AI Runs"
-          description="Analysis runs — view sources included, AI summary, and what was proposed."
-          href={`${base}/ai-runs`}
+          title="Project Discovery"
+          description="Run Claude to draft T661 Part 2 content — Line 242, 244, 246 — for each SR&ED project."
+          href={`${base}/discovery`}
           color="#2B307E"
-          count={runCount ?? 0}
-          countLabel="total"
+          count={discoveryRunCount ?? 0}
+          countLabel={
+            (acceptedProjectCount ?? 0) > 0
+              ? `${acceptedProjectCount} project${(acceptedProjectCount ?? 0) !== 1 ? "s" : ""} accepted`
+              : "runs completed"
+          }
           icon={
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
             </svg>
           }
         />
-        <WorkspaceCard
-          title="Proposals"
-          description="All AI-proposed projects, people, evidence, and gaps. Accept, reject, or defer each one."
+      </div>
+
+      {/* ── Legacy tools row ────────────────────────────────────────────── */}
+      <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-gray-400 font-medium mr-1">Advanced:</span>
+        <Link
+          href={`${base}/ai-runs`}
+          className="text-xs text-gray-500 hover:text-gray-900 transition-colors border border-gray-200 bg-white rounded-md px-2.5 py-1"
+        >
+          AI Runs
+          {(runCount ?? 0) > 0 && (
+            <span className="ml-1.5 text-gray-400">{runCount}</span>
+          )}
+        </Link>
+        <Link
           href={`${base}/proposals`}
-          color="#FF6A42"
-          count={proposalCount ?? 0}
-          countLabel={`${pendingCount ?? 0} pending`}
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          }
-        />
-        <WorkspaceCard
-          title="Documents"
-          description="Uploaded files. AI-readable text is extracted automatically for PDFs and Word docs."
-          href={`${base}/documents`}
-          color="#6366F1"
-          count={documentCount ?? 0}
-          countLabel={`${aiReadyCount ?? 0} AI ready`}
-          icon={
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-          }
-        />
+          className="text-xs text-gray-500 hover:text-gray-900 transition-colors border border-gray-200 bg-white rounded-md px-2.5 py-1"
+        >
+          Proposals
+          {(pendingCount ?? 0) > 0 && (
+            <span className="ml-1.5 text-amber-600 font-medium">{pendingCount} pending</span>
+          )}
+        </Link>
       </div>
     </div>
   );
