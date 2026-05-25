@@ -249,6 +249,7 @@ export async function triggerDiscovery(
 
   type ToolInput = {
     run_summary: string;
+    no_projects_reason?: string;
     projects: ProjectInput[];
   };
 
@@ -260,8 +261,9 @@ export async function triggerDiscovery(
       return await failRun("The AI returned no projects array.");
     }
     toolInput = {
-      run_summary: raw.run_summary ?? "",
-      projects:    raw.projects as ProjectInput[],
+      run_summary:       raw.run_summary ?? "",
+      no_projects_reason: raw.no_projects_reason ?? undefined,
+      projects:          raw.projects as ProjectInput[],
     };
   } catch (err) {
     return await failRun(
@@ -269,10 +271,24 @@ export async function triggerDiscovery(
     );
   }
 
+  // Zero projects is NOT a failure — Claude may have a legitimate reason.
+  // Complete the run and redirect to the detail page where the diagnostic panel
+  // will show the explanation from no_projects_reason.
   if (toolInput.projects.length === 0) {
-    return await failRun(
-      "The AI returned an empty project list. " +
-        "There may be insufficient source material to identify SR&ED projects."
+    const reason = toolInput.no_projects_reason?.trim() || toolInput.run_summary?.trim() || null;
+    await supabase
+      .from("discovery_runs")
+      .update({
+        status:           "completed",
+        run_summary:      reason,
+        prompt_tokens:    promptTokens,
+        completion_tokens: completionTokens,
+        completed_at:     new Date().toISOString(),
+      } as unknown as never)
+      .eq("id", runId);
+
+    redirect(
+      `/agency/clients/${tenantId}/engagements/${engagementId}/years/${fiscalYearId}/discovery/${runId}`
     );
   }
 

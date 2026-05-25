@@ -75,6 +75,17 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
     Pick<SredProject, "id" | "project_name" | "decision" | "decision_reason" | "line_242_ai_draft" | "line_246_ai_draft" | "created_at">
   >;
 
+  // When zero projects on a completed run, fetch the included documents for diagnostics
+  type DiagDoc = { id: string; title: string; document_type: string; ai_text: string | null; status: string };
+  let diagnosticDocs: DiagDoc[] = [];
+  if (run.status === "completed" && projects.length === 0 && run.document_ids.length > 0) {
+    const { data: docData } = await supabase
+      .from("documents")
+      .select("id, title, document_type, ai_text, status")
+      .in("id", run.document_ids);
+    diagnosticDocs = (docData ?? []) as unknown as DiagDoc[];
+  }
+
   // Breadcrumb names
   const { data: rawFy } = await supabase
     .from("fiscal_years").select("label")
@@ -233,9 +244,115 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
       )}
 
       {run.status === "completed" && projects.length === 0 && (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 text-center text-sm text-gray-400">
-          No SR&amp;ED projects were identified in this run. The source materials may not
-          contain sufficient technical detail to draft T661 content.
+        <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden"
+             style={{ borderLeftWidth: 4, borderLeftColor: "#F59E0B" }}>
+          <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+            <svg className="w-5 h-5 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            <h2 className="text-sm font-semibold text-amber-800">No SR&amp;ED Projects Suggested</h2>
+          </div>
+
+          <div className="px-6 py-5 space-y-5">
+            {/* Claude's explanation */}
+            {run.run_summary && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                  Claude&apos;s explanation
+                </p>
+                <p className="text-sm text-gray-700 leading-relaxed">{run.run_summary}</p>
+              </div>
+            )}
+
+            {/* Documents analysed */}
+            {diagnosticDocs.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Documents analysed in this run
+                </p>
+                <div className="space-y-2">
+                  {diagnosticDocs.map((doc) => {
+                    const charCount = doc.ai_text?.length ?? 0;
+                    const isAiReady = !!doc.ai_text;
+                    return (
+                      <div key={doc.id} className="flex items-start gap-3 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
+                        <span className={`mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                          isAiReady ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {isAiReady ? "AI Ready" : "Needs Text"}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-900 font-medium truncate">{doc.title}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {isAiReady
+                              ? `${charCount.toLocaleString()} characters sent to Claude`
+                              : "No AI text — document was NOT included in this run"}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Context sources count */}
+            {run.context_source_ids.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Context sources included
+                </p>
+                <p className="text-sm text-gray-700">
+                  {run.context_source_ids.length} active context source{run.context_source_ids.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+            )}
+
+            {/* Suggested actions */}
+            <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3.5">
+              <p className="text-xs font-semibold text-indigo-800 mb-2">Suggested next steps</p>
+              <ul className="space-y-1.5 text-sm text-indigo-700">
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">1.</span>
+                  <span>
+                    Check each document above has an <strong>AI Ready</strong> badge and a character count above ~500.
+                    If a document shows &ldquo;Needs Text,&rdquo; open it and add AI text manually.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">2.</span>
+                  <span>
+                    Add a <strong>Context Source</strong> to describe the research in plain language —
+                    what problem was being solved, what was unknown, what was tried, and what was found.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="flex-shrink-0 mt-0.5">3.</span>
+                  <span>
+                    Run Project Discovery again. The updated prompt explicitly recognises research papers,
+                    negative results, and low-confidence candidates.
+                  </span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Re-run link */}
+            <div className="flex items-center gap-3 pt-1">
+              <a
+                href={`${base}/discovery/new`}
+                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                style={{ backgroundColor: "#2B307E" }}
+              >
+                Run Project Discovery again
+              </a>
+              <a
+                href={`${base}/documents`}
+                className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
+              >
+                Review documents →
+              </a>
+            </div>
+          </div>
         </div>
       )}
 

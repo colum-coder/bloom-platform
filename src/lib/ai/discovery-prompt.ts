@@ -16,6 +16,11 @@
  *   line_246 — Technological uncertainty (structured fields)
  *   section_c_hints — Supporting evidence hints for Section C
  *   document_relationships — which documents support each project and how
+ *
+ * v1 → v2: Revised to handle research papers and technical documents correctly.
+ *   Research papers with uncertainty/methods/results qualify as SR&ED source material
+ *   regardless of whether they are written as SR&ED claim documents. Negative results
+ *   are valid. no_projects_reason field added to explain empty output.
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
@@ -23,10 +28,10 @@ import type Anthropic from "@anthropic-ai/sdk";
 // ── Prompt versioning ──────────────────────────────────────────────────────
 
 export const DISCOVERY_PROMPT_NAME    = "sred_project_discovery_v2";
-export const DISCOVERY_PROMPT_VERSION = "v1";
+export const DISCOVERY_PROMPT_VERSION = "v2";
 export const DISCOVERY_PROMPT_VERSION_STRING =
   `${DISCOVERY_PROMPT_NAME}_${DISCOVERY_PROMPT_VERSION}`;
-// → "sred_project_discovery_v2_v1"
+// → "sred_project_discovery_v2_v2"
 
 // ── System prompt ──────────────────────────────────────────────────────────
 
@@ -41,85 +46,135 @@ will review and refine before the CRA submission.
 
 ## SR&ED Eligibility — All Three Criteria Required
 
-1. TECHNOLOGICAL UNCERTAINTY — The claimant must have faced a genuine technological \
-obstacle whose solution could not be determined by standard practice or existing public \
-knowledge. Business uncertainty or routine engineering does not qualify.
+For work to qualify as SR&ED, all three of the following must be present:
+
+1. TECHNOLOGICAL UNCERTAINTY — At the START of the work, there must have been a \
+specific technological obstacle whose solution could not be determined by standard \
+practice or existing public knowledge. The key question is: was the outcome known \
+in advance, or did the investigators genuinely not know if/how it could be achieved?
 
 2. TECHNOLOGICAL ADVANCEMENT — The work must seek to advance the general body of \
-knowledge in a recognized scientific or engineering discipline. Advancing only the \
-claimant's internal knowledge is insufficient.
+knowledge in a recognized scientific or engineering discipline (biology, chemistry, \
+computer science, engineering, medicine, etc.).
 
-3. SYSTEMATIC INVESTIGATION — Work must be conducted through hypothesis, experiment, \
-observation of results, and conclusions. Ad hoc trial-and-error does not qualify.
+3. SYSTEMATIC INVESTIGATION — The work must be conducted through a defined methodology: \
+forming a hypothesis, designing and conducting experiments or trials, observing and \
+recording results, and drawing conclusions. Ad hoc guesswork does not qualify; \
+structured experimental work does.
+
+## Source Material Types — What You Will Be Given
+
+Source materials may include ANY of the following:
+- Published or unpublished research papers describing scientific or technical experiments
+- Internal technical documents, design documents, or technical memos
+- Meeting notes, project discussions, or discovery call notes
+- Client-generated SR&ED narratives or prior claim documents
+- Financial summaries, payroll records, or cost documentation
+
+**You do not need the source to explicitly mention "SR&ED."** Your job is to read what \
+is described and assess whether the described work meets the three criteria above.
+
+## How to Read Research Papers as SR&ED Source Material
+
+Published research papers are often the best evidence of SR&ED-eligible work. When you \
+encounter a paper or technical document, treat it as a description of work the \
+organisation performed. Assess it as follows:
+
+- ABSTRACT/INTRODUCTION: Usually states the research question and motivation. Look for \
+  the uncertainty — what was being tested or investigated and why the answer was unknown.
+- BACKGROUND/PRIOR ART: Establishes the state of existing knowledge. This helps define \
+  the technological uncertainty boundary.
+- METHODS/EXPERIMENTAL DESIGN: Describes the systematic investigation — how experiments \
+  were designed, what models or tools were used, what was measured. This evidences \
+  systematic investigation.
+- RESULTS: Describes what was observed. This is the outcome of the investigation.
+- DISCUSSION/CONCLUSIONS: Explains what was learned. This is the advancement — even if \
+  the result was negative.
+
+**NEGATIVE RESULTS ARE VALID SR&ED.** A paper that concludes "X did not cause Y" is \
+still documenting SR&ED work. The uncertainty existed at the outset, the investigation \
+was systematic, and the finding that X does not cause Y is itself a scientific \
+advancement — it narrows the solution space and contributes to the body of knowledge.
+
+## Confidence Levels — Use Them Rather Than Returning Nothing
+
+Use these levels honestly and proportionally:
+
+- **high**: All three SR&ED criteria are clearly present in the source material — \
+  a specific uncertainty is named, the methodology is systematic, and results or \
+  conclusions are described.
+- **medium**: Evidence of all three criteria exists but some elements are implicit or \
+  could be strengthened by additional documentation.
+- **low**: The work plausibly qualifies but the evidence is thin, indirect, or ambiguous. \
+  The consultant will need to gather more information.
+
+**Always prefer a low-confidence project over returning nothing.** A low-confidence \
+project is a starting point for the consultant — it flags that the work might qualify \
+and prompts them to ask the right questions. Returning nothing when SR&ED-like work is \
+described deprives the client of a potential claim.
 
 ## Identifying SR&ED Projects
 
-— One project corresponds to one distinct technological challenge with its own \
-  uncertainty, advancement sought, and experimental approach.
-— Do NOT create one project per document. Synthesize across all materials.
-— If multiple documents all describe the same technological work, combine them into \
-  one project and list all supporting documents in document_relationships.
-— If the materials contain clearly distinct R&D streams (e.g., different software \
-  modules with different uncertainties, or separate hardware and software challenges), \
-  create a separate project for each.
-— Typical SR&ED claims have 1 to 5 projects. Do not over-fragment.
+- One project = one distinct technological challenge with its own uncertainty, \
+  advancement, and experimental approach.
+- Do NOT create one project per document or one project per experiment. Synthesize \
+  across all materials for the same underlying challenge.
+- If a single paper describes multiple distinct research questions with different \
+  hypotheses, create a project for each distinct question.
+- If the materials are limited (e.g., a single paper), still draft projects — even \
+  partial drafts with medium or low confidence are more useful than an empty list.
 
 ## T661 Part 2 — What Each Line Covers
 
 **Line 242 — Advancement sought:**
 Describe the scientific or technological advancement this project was trying to achieve. \
-Explain what new knowledge or capability the claimant was seeking. Use specific \
-technical language. One to three paragraphs.
+What new knowledge or capability was the claimant seeking? Use the paper's framing but \
+write it as the claimant's goal, not just the paper's title.
 
 **Line 244 — Monthly work description:**
-For each month of the fiscal year provided to you, describe what SR&ED work was \
-performed in that month. If no SR&ED activity is evidenced in the materials for a \
-particular month, write exactly: \
-"No SR&ED activity evidenced in available materials for this period." \
-Do not fabricate activity. Base each month's description only on what the source \
-materials reveal. You MUST include an entry for every month in the fiscal year list.
+For each month of the fiscal year provided, describe what SR&ED work was performed. \
+If the source material does not specify when individual activities occurred (e.g., a \
+published paper reports aggregate results), distribute activities across the claim \
+year based on context clues (publication date, study period, submission history). \
+Note assumptions in the summary. For months where no activity is evidenced, write \
+exactly: "No SR&ED activity evidenced in available materials for this period."
 
 **Line 246 — Technological uncertainty:**
-State the specific technological uncertainty that existed at the start of this project.
-— uncertainty_statement: A clear, direct statement of what the claimant did not know \
-  and could not determine from existing knowledge (e.g., "It was unknown whether X \
-  approach could achieve Y performance without Z drawback").
-— approach_description: How the claimant approached the uncertainty — what hypothesis \
-  was formed and what experimental or investigative approach was taken.
-— standard_practice_gap: Why standard practice or publicly available knowledge was \
-  insufficient to resolve the uncertainty. Be specific about what standard tools, \
-  frameworks, or methods were tried or considered and why they fell short.
+State what was unknown at the start of the work and why. For research papers, the \
+introduction and research question usually contain this directly. Restate it as a \
+clear uncertainty claim, explain the experimental approach used, and explain why \
+existing methods, models, or literature were insufficient to answer it without \
+performing the work.
 
 **Section C hints:**
-Provide practical hints for the Bloom consultant about what additional evidence or \
-documentation would strengthen the Technical Report for this project. Reference specific \
-sections of the T661 Technical Report (e.g., "Scientific or technological uncertainty", \
-"Work performed", "Hypothesis and experimental approach", "Results and conclusions"). \
-Each hint should point to a specific gap or opportunity in the evidence.
+Provide practical hints for the Bloom consultant. Typical hints include: what additional \
+records (lab notebooks, git logs, meeting notes, timesheets) would strengthen the claim, \
+which sections of the T661 Technical Report still need evidence, and what questions to \
+ask the client about the study period and personnel.
 
 ## Document Relationships
 
-For each project, list which provided documents are relevant and how:
-— relationship_type: 'primary_evidence' (directly demonstrates the SR&ED work), \
-  'supporting_evidence' (corroborates activity), 'financial_record' (quantifies labour \
-  or materials), 'personnel_record' (identifies SR&ED performers), 'prior_art' \
-  (establishes state of the art or prior claim context)
-— supports_line: which T661 Part 2 line the document primarily supports \
-  (line_242, line_244, line_246, section_c, or multiple)
-— supports_section: which Technical Report section (e.g., "Work performed", \
-  "Systematic investigation")
-— relevance_note: one sentence explaining the specific relevance
+For each project, list relevant documents with:
+- relationship_type: how the document supports the project
+- supports_line: which T661 line it primarily evidences
+- relevance_note: one sentence on specific relevance
 
-## Quality Guidelines
+## When to Return Zero Projects
 
-— Draft T661 content should be clear, factual, and defensible at a CRA review.
-— Do not fabricate technical details not present in the source materials.
-— Use precise technical language — avoid vague phrases like "advanced technology".
-— If the source materials are insufficient to draft a particular section, write what \
-  you can and flag the gap in section_c_hints.
-— The run_summary should give Bloom a 3–5 sentence overview of what was found: \
-  how many projects identified, the dominant technological domain, and any \
-  significant gaps in the source materials.
+Return zero projects ONLY if ALL of the following are true:
+- The materials contain no identifiable technological uncertainty
+- OR the described work is purely routine (no experiments, no unknown outcomes)
+- OR the materials contain only administrative/financial content with no technical work
+
+If you return zero projects, you MUST populate no_projects_reason with a specific \
+explanation of why — what criteria were missing and what would need to change for \
+projects to be identifiable. "Insufficient material" alone is not acceptable.
+
+## Run Summary
+
+The run_summary should give Bloom a 3–5 sentence overview: how many projects identified, \
+what technological domain, quality of source materials, and any significant gaps. If zero \
+projects, the summary should explain the specific gap.
 `;
 
 // ── Tool definition ────────────────────────────────────────────────────────
@@ -127,7 +182,8 @@ For each project, list which provided documents are relevant and how:
 export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
   name: "submit_project_discovery",
   description:
-    "Submit all identified SR&ED projects with T661 Part 2 draft content and a run-level summary.",
+    "Submit all identified SR&ED projects with T661 Part 2 draft content and a run-level summary. " +
+    "If no projects are identified, still call this tool with an empty projects array and populate no_projects_reason.",
   input_schema: {
     type: "object" as const,
     required: ["run_summary", "projects"],
@@ -136,12 +192,24 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
         type: "string",
         description:
           "3–5 sentence plain-English summary of the discovery run findings. " +
-          "Include: number of projects found, dominant technological domain, " +
-          "quality/quantity of source materials, and any major gaps.",
+          "Include: number of projects found, technological domain, source material quality, gaps. " +
+          "If zero projects, explain specifically what criteria were missing.",
+      },
+      no_projects_reason: {
+        type: "string",
+        description:
+          "REQUIRED if projects array is empty. " +
+          "Explain specifically: (1) what SR&ED criteria were present in the materials, " +
+          "(2) what criteria were absent or unclear, and " +
+          "(3) what the consultant should do to enable a project to be identified. " +
+          "Be specific — reference the actual content of the source materials.",
       },
       projects: {
         type: "array",
-        description: "All SR&ED projects identified from the source materials.",
+        description:
+          "All SR&ED projects identified from the source materials. " +
+          "Prefer low-confidence projects over an empty list. " +
+          "Return an empty array only if the materials genuinely contain no identifiable technological uncertainty.",
         items: {
           type: "object",
           required: ["project_name", "line_242", "line_244", "line_246", "section_c_hints", "document_relationships"],
@@ -149,8 +217,16 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
             project_name: {
               type: "string",
               description:
-                "A concise, specific project title (e.g. 'Adaptive load-balancing algorithm for distributed inference'). " +
-                "Avoid generic names like 'Software Development Project'.",
+                "A concise, specific project title describing the technological challenge " +
+                "(e.g. 'Investigation of selective microglial progranulin depletion on NCL neuropathology'). " +
+                "Avoid generic names like 'Research Project'.",
+            },
+            confidence: {
+              type: "string",
+              enum: ["high", "medium", "low"],
+              description:
+                "Confidence that this project meets SR&ED criteria. " +
+                "Use 'low' rather than omitting the project entirely.",
             },
             line_242: {
               type: "object",
@@ -160,8 +236,8 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                 narrative: {
                   type: "string",
                   description:
-                    "1–3 paragraph description of the scientific or technological advancement sought by this project. " +
-                    "Explain what new knowledge or capability the claimant was seeking to develop.",
+                    "1–3 paragraph description of the scientific or technological advancement sought. " +
+                    "What new knowledge or capability was being pursued?",
                 },
               },
             },
@@ -173,21 +249,22 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                 monthly_breakdown: {
                   type: "array",
                   description:
-                    "One entry per fiscal year month. You MUST include every month in the fiscal year. " +
-                    "If no activity is evidenced for a month, write the required placeholder text.",
+                    "One entry per fiscal year month. Include every month provided. " +
+                    "If the source does not specify monthly timing, distribute work across the claim period " +
+                    "based on context (study duration, publication date, etc.) and note assumptions in the summary.",
                   items: {
                     type: "object",
                     required: ["month", "activities"],
                     properties: {
                       month: {
                         type: "string",
-                        description: "Month in YYYY-MM format, e.g. '2023-04'.",
+                        description: "YYYY-MM format, e.g. '2023-04'.",
                       },
                       activities: {
                         type: "string",
                         description:
-                          "Description of SR&ED work performed in this month based on source materials. " +
-                          "If no activity is evidenced: 'No SR&ED activity evidenced in available materials for this period.'",
+                          "SR&ED work performed this month based on source materials. " +
+                          "If no activity evidenced: 'No SR&ED activity evidenced in available materials for this period.'",
                       },
                     },
                   },
@@ -195,7 +272,8 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                 summary: {
                   type: "string",
                   description:
-                    "2–3 sentence overall summary of the work performed throughout the fiscal year for this project.",
+                    "2–3 sentence overall summary of work performed. " +
+                    "Note any assumptions made about timing if the source did not specify monthly detail.",
                 },
               },
             },
@@ -207,28 +285,26 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                 uncertainty_statement: {
                   type: "string",
                   description:
-                    "A direct statement of the specific technological uncertainty: what was unknown and why it could not " +
-                    "be determined from existing knowledge. Start with 'It was uncertain whether...' or similar.",
+                    "A direct statement of what was unknown at the start of the work. " +
+                    "Start with 'It was uncertain whether...' or 'At the outset of this work, it was unknown...'",
                 },
                 approach_description: {
                   type: "string",
                   description:
-                    "How the claimant approached resolving the uncertainty: the hypothesis formed and the " +
-                    "experimental or investigative methodology used.",
+                    "How the claimant approached resolving the uncertainty — hypothesis, experimental design, methodology.",
                 },
                 standard_practice_gap: {
                   type: "string",
                   description:
                     "Why standard practice or existing public knowledge was insufficient. " +
-                    "Name specific tools, methods, or frameworks considered and explain why they fell short.",
+                    "What tools, models, or prior literature existed and why they did not resolve the uncertainty.",
                 },
               },
             },
             section_c_hints: {
               type: "array",
               description:
-                "Practical hints for the Bloom consultant about evidence gaps and opportunities " +
-                "for strengthening the Technical Report for this project.",
+                "Practical hints for the Bloom consultant about evidence gaps and documentation opportunities.",
               items: {
                 type: "object",
                 required: ["section", "hint"],
@@ -236,15 +312,12 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                   section: {
                     type: "string",
                     description:
-                      "The T661 Technical Report section this hint relates to " +
-                      "(e.g. 'Work performed', 'Results and conclusions', 'Hypothesis and experimental approach').",
+                      "T661 Technical Report section (e.g. 'Work performed', 'Results and conclusions').",
                   },
                   hint: {
                     type: "string",
                     description:
-                      "Specific, actionable advice for the consultant " +
-                      "(e.g. 'Obtain git commit logs or test run records for the period Apr–Jun 2023 " +
-                      "to evidence the hypothesis testing phase').",
+                      "Specific, actionable advice (e.g. 'Request lab notebooks or data logs for the study period').",
                   },
                 },
               },
@@ -252,16 +325,15 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
             document_relationships: {
               type: "array",
               description:
-                "Documents from the provided list that are relevant to this project. " +
-                "Only reference documents whose titles exactly match a document in the provided list.",
+                "Documents from the provided list relevant to this project. " +
+                "Only use document titles that exactly match names in the provided source list.",
               items: {
                 type: "object",
                 required: ["document_title", "relationship_type", "supports_line", "relevance_note"],
                 properties: {
                   document_title: {
                     type: "string",
-                    description:
-                      "The exact title of the document as provided in the source list.",
+                    description: "Exact title of the document as provided.",
                   },
                   relationship_type: {
                     type: "string",
@@ -281,14 +353,11 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                   },
                   supports_section: {
                     type: "string",
-                    description:
-                      "The Technical Report section this document evidences " +
-                      "(e.g. 'Scientific or technological uncertainty', 'Work performed').",
+                    description: "Technical Report section evidenced (e.g. 'Scientific or technological uncertainty').",
                   },
                   relevance_note: {
                     type: "string",
-                    description:
-                      "One sentence explaining the specific relevance of this document to this project.",
+                    description: "One sentence on specific relevance to this project.",
                   },
                 },
               },
@@ -302,10 +371,8 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
 
 // ── User message builder ───────────────────────────────────────────────────
 
-// Per-document character limit — prevents any single large document from
-// dominating the context window.
-const MAX_DOC_CHARS     = 40_000;
-const MAX_SOURCE_CHARS  = 30_000;
+const MAX_DOC_CHARS    = 40_000;
+const MAX_SOURCE_CHARS = 30_000;
 
 export interface DiscoveryDocument {
   id: string;
@@ -359,19 +426,17 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 interface BuildDiscoveryUserMessageParams {
   engagementTitle: string;
   fiscalYearLabel: string;
-  fiscalYearMonths: string[]; // ["2023-04", "2023-05", ...] in chronological order
+  fiscalYearMonths: string[];
   documents: DiscoveryDocument[];
   contextSources: DiscoveryContextSource[];
 }
 
-/**
- * Formats fiscal year months as human-readable labels for the prompt.
- * "2023-04" → "April 2023"
- */
 function formatMonthLabel(ym: string): string {
   const [year, month] = ym.split("-").map(Number);
-  const date = new Date(year, month - 1, 1);
-  return date.toLocaleDateString("en-CA", { year: "numeric", month: "long" });
+  return new Date(year, month - 1, 1).toLocaleDateString("en-CA", {
+    year: "numeric",
+    month: "long",
+  });
 }
 
 export function buildDiscoveryUserMessage({
@@ -386,15 +451,21 @@ export function buildDiscoveryUserMessage({
     .join("\n");
 
   const header = [
-    "You are analysing the following SR&ED engagement:",
+    "You are analysing source materials for the following SR&ED engagement:",
     `**Engagement**: ${engagementTitle}`,
     `**Claim Year (Fiscal Year)**: ${fiscalYearLabel}`,
     "",
-    "**Fiscal Year Months — you MUST include all of these in line_244 monthly_breakdown:**",
+    "**Fiscal Year Months — include ALL of these in line_244 monthly_breakdown:**",
     monthList,
     "",
-    `You have been provided ${documents.length} AI-ready document(s) and ${contextSources.length} context source(s).`,
-    "Analyse ALL materials below, identify SR&ED projects, and call the submit_project_discovery tool.",
+    `Source materials provided: ${documents.length} document(s) and ${contextSources.length} context source(s).`,
+    "",
+    "Read all materials carefully. Identify any work that involves technological uncertainty, ",
+    "systematic investigation, and advancement — regardless of whether the documents were written",
+    "as SR&ED claim documents. Research papers, technical studies, and experimental reports are",
+    "all valid SR&ED source material.",
+    "",
+    "After reading, call the submit_project_discovery tool with your complete output.",
     "",
   ].join("\n");
 
@@ -410,10 +481,10 @@ export function buildDiscoveryUserMessage({
         truncNote =
           "\n[Content truncated at 40,000 characters — full document available in the platform]";
       }
-      return `\n--- Document ${i + 1}: ${doc.title} | ${typeLabel} ---\n${text}${truncNote}\n---`;
+      return `\n--- Document ${i + 1}: ${doc.title} | Type: ${typeLabel} | ${doc.ai_text.length.toLocaleString()} characters ---\n${text}${truncNote}\n---`;
     });
     docSection =
-      "\n=== UPLOADED DOCUMENTS (AI-ready text) ===\n" +
+      "\n=== UPLOADED DOCUMENTS ===\n" +
       docBlocks.join("") +
       "\n=== END DOCUMENTS ===\n";
   }
@@ -427,10 +498,9 @@ export function buildDiscoveryUserMessage({
       let truncNote = "";
       if (body.length > MAX_SOURCE_CHARS) {
         body = body.slice(0, MAX_SOURCE_CHARS);
-        truncNote =
-          "\n[Content truncated at 30,000 characters]";
+        truncNote = "\n[Content truncated at 30,000 characters]";
       }
-      return `\n--- Context Source ${i + 1}: ${src.title} | ${typeLabel} ---\n${body}${truncNote}\n---`;
+      return `\n--- Context Source ${i + 1}: ${src.title} | Type: ${typeLabel} ---\n${body}${truncNote}\n---`;
     });
     sourceSection =
       "\n=== CONTEXT SOURCES ===\n" +
@@ -440,24 +510,21 @@ export function buildDiscoveryUserMessage({
 
   const footer = [
     "",
-    "=== INSTRUCTIONS ===",
-    "1. Identify all SR&ED-eligible projects in the materials above.",
-    "2. Draft T661 Part 2 content for each project.",
-    `3. For Line 244 monthly_breakdown, include ALL ${fiscalYearMonths.length} months listed above.`,
-    "4. Only reference document titles that exactly match names in the Document list above.",
-    "5. Call the submit_project_discovery tool with your complete output.",
-    "=== END INSTRUCTIONS ===",
+    "=== REMINDER ===",
+    `- Include ALL ${fiscalYearMonths.length} fiscal year months in line_244 monthly_breakdown.`,
+    "- Research papers and technical documents are valid SR&ED source material.",
+    "- Negative results (e.g. 'X did not cause Y') are valid SR&ED — the uncertainty existed at the outset.",
+    "- Use low confidence rather than omitting a project entirely.",
+    "- If returning zero projects, you MUST populate no_projects_reason explaining specifically what was missing.",
+    "=== END REMINDER ===",
   ].join("\n");
 
   return header + docSection + sourceSection + footer;
 }
 
 /**
- * Generates an array of YYYY-MM strings for every month between
- * startDate and endDate (inclusive).
- *
- * Example: generateFiscalYearMonths("2023-04-01", "2024-03-31")
- *   → ["2023-04", "2023-05", ..., "2024-03"]
+ * Generates YYYY-MM strings for every month between startDate and endDate (inclusive).
+ * Example: generateFiscalYearMonths("2023-04-01", "2024-03-31") → ["2023-04", ..., "2024-03"]
  */
 export function generateFiscalYearMonths(
   startDate: string,
