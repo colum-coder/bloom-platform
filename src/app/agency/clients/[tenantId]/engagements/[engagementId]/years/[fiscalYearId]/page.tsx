@@ -199,7 +199,7 @@ export default async function FiscalYearWorkspacePage({ params }: Props) {
 
       {/* ── Legacy tools row ────────────────────────────────────────────── */}
       <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-gray-400 font-medium mr-1">Advanced:</span>
+        <span className="text-xs text-gray-400 font-medium mr-1">Legacy:</span>
         <Link
           href={`${base}/ai-runs`}
           className="text-xs text-gray-500 hover:text-gray-900 transition-colors border border-gray-200 bg-white rounded-md px-2.5 py-1"

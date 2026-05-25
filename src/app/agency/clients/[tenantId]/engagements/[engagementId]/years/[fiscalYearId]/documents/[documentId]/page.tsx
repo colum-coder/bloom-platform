@@ -90,8 +90,9 @@ export default async function DocumentDetailPage({ params }: Props) {
   const fyLabel =
     (fyData as unknown as { label: string } | null)?.label ?? "Claim Year";
 
-  const isAiReady = !!doc.ai_text;
-  const yearBase  = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
+  const isAiReady    = !!doc.ai_text;
+  const isLowQuality = isAiReady && doc.ai_text!.length < 500;
+  const yearBase     = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
   return (
     <div className="px-6 sm:px-8 py-8 max-w-4xl mx-auto">
@@ -243,6 +244,23 @@ export default async function DocumentDetailPage({ params }: Props) {
           />
         </div>
       </div>
+
+      {/* ── Extraction quality warning ────────────────────────────────────── */}
+      {isLowQuality && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 mb-5 flex items-start gap-3">
+          <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Short AI text — extraction may be incomplete</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              This document has only {doc.ai_text!.length} characters of extracted text. For best results,
+              Project Discovery needs at least 500 characters. Check the extracted text below and
+              supplement it manually if important content is missing (e.g. scanned PDFs, image-heavy documents).
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── AI Text card ─────────────────────────────────────────────────── */}
       <div

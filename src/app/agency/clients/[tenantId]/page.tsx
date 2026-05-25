@@ -249,22 +249,16 @@ export default async function ClientTenantDetailPage({ params }: Props) {
                       Open Claim Year
                     </Link>
                     <Link
-                      href={`${yearBase}/context`}
-                      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium border border-gray-200 text-gray-600 bg-white hover:border-teal-300 hover:text-teal-700 transition-colors"
-                    >
-                      Context Sources
-                    </Link>
-                    <Link
-                      href={`${yearBase}/ai-runs`}
+                      href={`${yearBase}/documents`}
                       className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium border border-gray-200 text-gray-600 bg-white hover:border-indigo-300 hover:text-indigo-700 transition-colors"
                     >
-                      AI Runs
+                      Documents
                     </Link>
                     <Link
-                      href={`${yearBase}/proposals`}
-                      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium border border-gray-200 text-gray-600 bg-white hover:border-orange-300 hover:text-orange-700 transition-colors"
+                      href={`${yearBase}/discovery`}
+                      className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium border border-gray-200 text-gray-600 bg-white hover:border-blue-300 hover:text-blue-700 transition-colors"
                     >
-                      Proposals
+                      Project Discovery
                     </Link>
                   </div>
                 </div>

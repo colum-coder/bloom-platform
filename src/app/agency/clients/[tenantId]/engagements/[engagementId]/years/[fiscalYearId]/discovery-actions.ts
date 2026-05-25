@@ -203,20 +203,37 @@ export async function triggerDiscovery(
     ReturnType<ReturnType<typeof createAnthropicClient>["messages"]["create"]>
   >;
 
+  // ── AbortController — hard timeout at 55 seconds ─────────────────────────
+  // Prevents stuck runs from blocking the server action indefinitely.
+  // The 55s limit gives Claude enough time for a typical response while
+  // staying safely inside the hosting platform's 60s request timeout.
+  const abort     = new AbortController();
+  const timeoutId = setTimeout(() => abort.abort(), 55_000);
+
   try {
     const ai = createAnthropicClient();
-    aiResponse = await ai.messages.create({
-      model,
-      max_tokens:  8192,
-      system:      DISCOVERY_SYSTEM_PROMPT,
-      tools:       [SUBMIT_PROJECT_DISCOVERY_TOOL],
-      tool_choice: { type: "tool", name: "submit_project_discovery" },
-      messages:    [{ role: "user", content: userMessage }],
-    });
-  } catch (err) {
-    return await failRun(
-      `Anthropic API call failed: ${err instanceof Error ? err.message : String(err)}`
+    aiResponse = await ai.messages.create(
+      {
+        model,
+        max_tokens:  8192,
+        system:      DISCOVERY_SYSTEM_PROMPT,
+        tools:       [SUBMIT_PROJECT_DISCOVERY_TOOL],
+        tool_choice: { type: "tool", name: "submit_project_discovery" },
+        messages:    [{ role: "user", content: userMessage }],
+      },
+      { signal: abort.signal }
     );
+  } catch (err) {
+    const isTimeout =
+      err instanceof Error &&
+      (err.name === "AbortError" || err.message.includes("aborted"));
+    return await failRun(
+      isTimeout
+        ? "The Anthropic API call timed out after 55 seconds. The document set may be too large. Try removing low-quality documents or splitting the claim year into smaller runs."
+        : `Anthropic API call failed: ${err instanceof Error ? err.message : String(err)}`
+    );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const promptTokens     = aiResponse.usage?.input_tokens ?? null;
@@ -234,6 +251,7 @@ export async function triggerDiscovery(
   // ── Parse tool input ─────────────────────────────────────────────────────
   type ProjectInput = {
     project_name: string;
+    confidence?: "high" | "medium" | "low";
     line_242: Line242Content;
     line_244: Line244Content;
     line_246: Line246Content;
@@ -309,6 +327,8 @@ export async function triggerDiscovery(
   for (const p of toolInput.projects) {
     if (!p.project_name?.trim()) continue;
 
+    const VALID_CONFIDENCE = new Set(["high", "medium", "low"]);
+
     const { data: insertedProject, error: projectInsertError } = await supabase
       .from("sred_projects")
       .insert({
@@ -317,6 +337,9 @@ export async function triggerDiscovery(
         engagement_id:           engagementId,
         tenant_id:               tenantId,
         project_name:            p.project_name.trim(),
+        confidence:              VALID_CONFIDENCE.has(p.confidence ?? "")
+          ? p.confidence
+          : null,
         decision:                "pending",
         line_242_ai_draft:       p.line_242   ?? null,
         line_244_ai_draft:       p.line_244   ?? null,

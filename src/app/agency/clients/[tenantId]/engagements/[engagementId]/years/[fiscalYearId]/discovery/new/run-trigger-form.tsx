@@ -9,6 +9,7 @@ interface Props {
   tenantId: string;
   documentCount: number;
   contextSourceCount: number;
+  lowQualityDocCount: number;
 }
 
 export function RunTriggerForm({
@@ -17,6 +18,7 @@ export function RunTriggerForm({
   tenantId,
   documentCount,
   contextSourceCount,
+  lowQualityDocCount,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -95,25 +97,34 @@ export function RunTriggerForm({
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-indigo-400">→</span>
-            <span><strong>Line 242</strong> — Advancement sought (narrative paragraph)</span>
+            <span><strong>Line 242</strong> — Scientific or technological uncertainty (hypothesis · background · methods · combined draft ≤ 350 words)</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-indigo-400">→</span>
-            <span><strong>Line 244</strong> — Monthly work description for each fiscal year month</span>
+            <span><strong>Line 244</strong> — Work performed — one entry per fiscal year month, each labelled Supported / Inferred / Gap</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-indigo-400">→</span>
-            <span><strong>Line 246</strong> — Technological uncertainty (structured fields)</span>
+            <span><strong>Line 246</strong> — Advancement achieved or attempted (results · conclusions · what did not work · future research)</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="mt-0.5 text-indigo-400">→</span>
-            <span>Section C hints and document relationship mapping</span>
+            <span>Section C evidence hints and document relationship mapping</span>
           </li>
         </ul>
         <p className="text-xs text-indigo-600 mt-3">
           All output is saved as an AI draft. You can edit each line independently. Original drafts are never lost.
         </p>
       </div>
+
+      {/* Low-quality document warning */}
+      {lowQualityDocCount > 0 && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <strong>{lowQualityDocCount} document{lowQualityDocCount !== 1 ? "s have" : " has"} short AI text (&lt; 500 characters).</strong>{" "}
+          Poorly extracted documents may reduce analysis quality. Consider reviewing and supplementing
+          the AI text on those documents before running.
+        </div>
+      )}
 
       {!hasInputs && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">

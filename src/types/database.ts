@@ -495,6 +495,8 @@ export interface SredProject {
   engagement_id: string;
   tenant_id: string;
   project_name: string;
+  /** AI-assigned confidence level for SR&ED qualification. NULL for pre-v3 runs. */
+  confidence: "high" | "medium" | "low" | null;
   decision: SredProjectDecision;
   decision_reason: string | null;
   reviewed_by: string | null;

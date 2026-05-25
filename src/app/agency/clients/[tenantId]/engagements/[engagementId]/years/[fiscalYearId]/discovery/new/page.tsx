@@ -45,7 +45,8 @@ export default async function RunDiscoveryPage({ params }: Props) {
   const tenantName = (tenantData as unknown as { name: string } | null)?.name ?? "Client";
 
   // Count available inputs (same queries the action uses)
-  const [{ count: documentCount }, { count: contextSourceCount }] = await Promise.all([
+  // Also fetch ai_text lengths for the low-quality doc warning (< 500 chars = poor extraction)
+  const [{ count: documentCount }, { count: contextSourceCount }, { data: aiReadyDocs }] = await Promise.all([
     supabase
       .from("documents")
       .select("*", { count: "exact", head: true })
@@ -59,7 +60,18 @@ export default async function RunDiscoveryPage({ params }: Props) {
       .eq("fiscal_year_id", params.fiscalYearId)
       .eq("tenant_id", params.tenantId)
       .eq("status", "active"),
+    supabase
+      .from("documents")
+      .select("ai_text")
+      .eq("fiscal_year_id", params.fiscalYearId)
+      .eq("tenant_id", params.tenantId)
+      .neq("status", "archived")
+      .not("ai_text", "is", null),
   ]);
+
+  const lowQualityDocCount = (aiReadyDocs ?? []).filter(
+    (d) => (d as { ai_text: string }).ai_text.length < 500
+  ).length;
 
   const base = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
@@ -93,6 +105,7 @@ export default async function RunDiscoveryPage({ params }: Props) {
           tenantId={params.tenantId}
           documentCount={documentCount ?? 0}
           contextSourceCount={contextSourceCount ?? 0}
+          lowQualityDocCount={lowQualityDocCount}
         />
       </div>
 

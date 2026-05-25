@@ -3,7 +3,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isAgencyRole } from "@/lib/auth/permissions";
 import { archiveContextSource } from "../year-actions";
-import { TriggerAiRunButton } from "./trigger-run-button";
 import type { ContextSource } from "@/types/database";
 import { SOURCE_TYPE_LABELS } from "@/lib/ai/sred-prompt";
 
@@ -63,13 +62,6 @@ export default async function ContextSourcesPage({ params }: Props) {
 
   const sources = (rawSources ?? []) as unknown as ContextSource[];
 
-  // Load AI run count for this fiscal year
-  const { count: runCount } = await supabase
-    .from("ai_suggestion_runs")
-    .select("*", { count: "exact", head: true })
-    .eq("fiscal_year_id", params.fiscalYearId)
-    .eq("tenant_id", params.tenantId);
-
   const yearBase = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
   return (
@@ -102,42 +94,6 @@ export default async function ContextSourcesPage({ params }: Props) {
         >
           + Add Source
         </Link>
-      </div>
-
-      {/* AI run trigger */}
-      <div
-        className="bg-white rounded-xl border border-gray-100 shadow-sm p-5 mb-5"
-        style={{ borderLeftWidth: 3, borderLeftColor: "#2B307E" }}
-      >
-        <div className="flex items-start gap-3 mb-3">
-          <span style={{ color: "#2B307E" }} className="flex-shrink-0 mt-0.5">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-            </svg>
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">AI Analysis</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Analyses all active sources and proposes SR&amp;ED projects, people, evidence, and gaps.
-              {runCount != null && runCount > 0 && (
-                <> &middot;{" "}
-                  <Link
-                    href={`${yearBase}/ai-runs`}
-                    className="text-gray-600 hover:underline"
-                  >
-                    {runCount} run{runCount === 1 ? "" : "s"} so far
-                  </Link>
-                </>
-              )}
-            </p>
-          </div>
-        </div>
-        <TriggerAiRunButton
-          fiscalYearId={params.fiscalYearId}
-          engagementId={params.engagementId}
-          tenantId={params.tenantId}
-          sourceCount={sources.length}
-        />
       </div>
 
       {/* Source list */}
@@ -203,12 +159,21 @@ export default async function ContextSourcesPage({ params }: Props) {
       </div>
 
       {/* Navigation */}
-      <div className="mt-5 flex items-center gap-4 text-sm">
-        <Link href={`${yearBase}/ai-runs`} className="text-gray-500 hover:text-gray-900 transition-colors">
-          View AI Runs →
+      <div className="mt-5 flex items-center gap-3">
+        <Link
+          href={yearBase}
+          className="text-sm text-gray-400 hover:text-gray-900 transition-colors"
+        >
+          ← Claim Year
         </Link>
-        <Link href={`${yearBase}/proposals`} className="text-gray-500 hover:text-gray-900 transition-colors">
-          View All Proposals →
+        <span className="text-gray-200">·</span>
+        <span className="text-xs text-gray-400 font-medium">Legacy:</span>
+        <Link href={`${yearBase}/ai-runs`} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
+          AI Runs
+        </Link>
+        <span className="text-gray-300">·</span>
+        <Link href={`${yearBase}/proposals`} className="text-xs text-gray-400 hover:text-gray-700 transition-colors">
+          Proposals
         </Link>
       </div>
     </div>
