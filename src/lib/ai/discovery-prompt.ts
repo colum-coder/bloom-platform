@@ -27,11 +27,11 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 // ── Prompt versioning ──────────────────────────────────────────────────────
 
-export const DISCOVERY_PROMPT_NAME    = "sred_project_discovery_v2";
-export const DISCOVERY_PROMPT_VERSION = "v2";
+export const DISCOVERY_PROMPT_NAME    = "sred_project_discovery_v3";
+export const DISCOVERY_PROMPT_VERSION = "v1";
 export const DISCOVERY_PROMPT_VERSION_STRING =
   `${DISCOVERY_PROMPT_NAME}_${DISCOVERY_PROMPT_VERSION}`;
-// → "sred_project_discovery_v2_v2"
+// → "sred_project_discovery_v3_v1"
 
 // ── System prompt ──────────────────────────────────────────────────────────
 
@@ -126,25 +126,63 @@ described deprives the client of a potential claim.
 
 ## T661 Part 2 — What Each Line Covers
 
-**Line 242 — Advancement sought:**
-Describe the scientific or technological advancement this project was trying to achieve. \
-What new knowledge or capability was the claimant seeking? Use the paper's framing but \
-write it as the claimant's goal, not just the paper's title.
+**Line 242 — Scientific or technological uncertainty:**
+Provide four structured elements followed by a combined draft.
 
-**Line 244 — Monthly work description:**
-For each month of the fiscal year provided, describe what SR&ED work was performed. \
-If the source material does not specify when individual activities occurred (e.g., a \
-published paper reports aggregate results), distribute activities across the claim \
-year based on context clues (publication date, study period, submission history). \
-Note assumptions in the summary. For months where no activity is evidenced, write \
-exactly: "No SR&ED activity evidenced in available materials for this period."
+- HYPOTHESIS: The working hypothesis or research question that drove the investigation. \
+  State this as what the investigators believed might be achievable or determinable, \
+  and why it was worth investigating.
+- BACKGROUND: The prior state of knowledge at the outset. Establish the boundary of \
+  existing understanding — what was already known, what gaps remained, and why the \
+  uncertainty was genuine rather than a matter of looking up an established answer.
+- METHODS: The experimental methodology or investigative approach used to address the \
+  uncertainty. Describe what was designed, built, or tested, and how evidence was gathered. \
+  This sub-section evidences the systematic investigation criterion.
+- UNCERTAINTY: A precise, direct statement of the specific scientific or technological \
+  uncertainty — what genuinely could not be determined by standard practice or existing \
+  knowledge without performing the work.
 
-**Line 246 — Technological uncertainty:**
-State what was unknown at the start of the work and why. For research papers, the \
-introduction and research question usually contain this directly. Restate it as a \
-clear uncertainty claim, explain the experimental approach used, and explain why \
-existing methods, models, or literature were insufficient to answer it without \
-performing the work.
+Then produce a COMBINED DRAFT: a single integrated narrative of at most 350 words \
+that weaves hypothesis → background → uncertainty → methods into a coherent T661 \
+Line 242 entry. Write from the claimant's perspective. The combined draft must clearly \
+state the uncertainty, establish the knowledge boundary, and explain why the work \
+constituted genuine SR&ED investigation.
+
+**Line 244 — Work performed in the tax year:**
+For each fiscal year month provided, describe the SR&ED work performed. Label every \
+monthly entry with one of three evidence types:
+
+- "supported": the timing and activities are directly stated or clearly evidenced \
+  in the source material (e.g., dated notes, explicit study period, timestamped data).
+- "inferred": the timing or activities are logically derived from the project sequence, \
+  study duration, publication context, or method chronology. When inferring, note the \
+  basis briefly within the activities text — for example: "Based on the estimated study \
+  duration described in the paper, literature search and hypothesis refinement are \
+  inferred to have occurred during this period."
+- "gap": no activity can be evidenced or reasonably inferred for this period. Use \
+  exactly: "No SR&ED activity evidenced in available materials for this period."
+
+Inference is permitted and encouraged where the source material supports the overall \
+project sequence even without exact dates. Do not present inferred timing as directly \
+documented fact. The total activities text across all months should remain within \
+approximately 700 words.
+
+**Line 246 — Advancement achieved or attempted:**
+Provide five structured elements describing the outcome of the work:
+
+- RESULTS: What was actually observed, measured, or produced. Describe the direct \
+  experimental or investigative outcomes — what happened when the methodology was applied.
+- CONCLUSIONS: What the results established. What was learned from the investigation, \
+  including negative findings (e.g., "X did not cause Y" is a valid scientific conclusion).
+- WHAT DID NOT WORK: What approaches, hypotheses, or methods failed or yielded no useful \
+  result. This documents the experimental nature of the investigation and shows that \
+  the outcome was not predetermined.
+- FUTURE RESEARCH: How the findings inform or enable the next stage of research or \
+  development. What remains unresolved, and what the results suggest should be \
+  investigated next.
+- ADVANCEMENT STATEMENT: A direct 2–3 sentence statement of the advancement achieved \
+  or attempted: what the claimant now knows or can now do as a result of this work \
+  that was not known or achievable before the work began.
 
 **Section C hints:**
 Provide practical hints for the Bloom consultant. Typical hints include: what additional \
@@ -230,14 +268,45 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
             },
             line_242: {
               type: "object",
-              required: ["narrative"],
-              description: "T661 Part 2, Line 242 — Advancement sought.",
+              required: ["hypothesis", "background", "methods", "uncertainty", "combined_draft", "word_count"],
+              description: "T661 Part 2, Line 242 — Scientific or technological uncertainty.",
               properties: {
-                narrative: {
+                hypothesis: {
                   type: "string",
                   description:
-                    "1–3 paragraph description of the scientific or technological advancement sought. " +
-                    "What new knowledge or capability was being pursued?",
+                    "The working hypothesis or research question at the outset. " +
+                    "What did the investigators believe might be achievable or determinable, and why?",
+                },
+                background: {
+                  type: "string",
+                  description:
+                    "Prior state of knowledge at the outset. What was already known? " +
+                    "What gaps in knowledge made the uncertainty genuine rather than a matter of looking up an established answer?",
+                },
+                methods: {
+                  type: "string",
+                  description:
+                    "Experimental methodology or investigative approach. " +
+                    "What was designed, built, or tested? How was evidence gathered? Evidences systematic investigation.",
+                },
+                uncertainty: {
+                  type: "string",
+                  description:
+                    "A precise, direct statement of the specific scientific or technological uncertainty. " +
+                    "What genuinely could not be determined without performing the work? " +
+                    "Start with: 'It was uncertain whether...' or 'At the outset of this work, it was unknown...'",
+                },
+                combined_draft: {
+                  type: "string",
+                  description:
+                    "Integrated T661 Line 242 narrative (maximum 350 words). " +
+                    "Weave hypothesis → background → uncertainty → methods into a coherent entry " +
+                    "written from the claimant's perspective. Must clearly state the uncertainty, " +
+                    "establish the knowledge boundary, and explain why the work constituted genuine SR&ED.",
+                },
+                word_count: {
+                  type: "number",
+                  description: "Approximate word count of combined_draft.",
                 },
               },
             },
@@ -254,7 +323,7 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                     "based on context (study duration, publication date, etc.) and note assumptions in the summary.",
                   items: {
                     type: "object",
-                    required: ["month", "activities"],
+                    required: ["month", "activities", "evidence_type"],
                     properties: {
                       month: {
                         type: "string",
@@ -263,8 +332,17 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
                       activities: {
                         type: "string",
                         description:
-                          "SR&ED work performed this month based on source materials. " +
-                          "If no activity evidenced: 'No SR&ED activity evidenced in available materials for this period.'",
+                          "SR&ED work performed this month. " +
+                          "For inferred entries, briefly note the basis (e.g. 'Based on the estimated study duration...'). " +
+                          "For gap entries use exactly: 'No SR&ED activity evidenced in available materials for this period.'",
+                      },
+                      evidence_type: {
+                        type: "string",
+                        enum: ["supported", "inferred", "gap"],
+                        description:
+                          "'supported' = timing directly stated or clearly evidenced in source material. " +
+                          "'inferred' = timing logically derived from project sequence, study duration, or context. " +
+                          "'gap' = no activity evidenced or reasonably inferable.",
                       },
                     },
                   },
@@ -279,25 +357,39 @@ export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
             },
             line_246: {
               type: "object",
-              required: ["uncertainty_statement", "approach_description", "standard_practice_gap"],
-              description: "T661 Part 2, Line 246 — Technological uncertainty.",
+              required: ["results", "conclusions", "what_did_not_work", "future_research", "advancement_statement"],
+              description: "T661 Part 2, Line 246 — Advancement achieved or attempted.",
               properties: {
-                uncertainty_statement: {
+                results: {
                   type: "string",
                   description:
-                    "A direct statement of what was unknown at the start of the work. " +
-                    "Start with 'It was uncertain whether...' or 'At the outset of this work, it was unknown...'",
+                    "What was actually observed, measured, or produced. " +
+                    "Describe the direct experimental or investigative outcomes — what happened when the methodology was applied.",
                 },
-                approach_description: {
+                conclusions: {
                   type: "string",
                   description:
-                    "How the claimant approached resolving the uncertainty — hypothesis, experimental design, methodology.",
+                    "What the results established. What was learned from the investigation, " +
+                    "including negative findings. A finding that 'X did not cause Y' is a valid scientific conclusion.",
                 },
-                standard_practice_gap: {
+                what_did_not_work: {
                   type: "string",
                   description:
-                    "Why standard practice or existing public knowledge was insufficient. " +
-                    "What tools, models, or prior literature existed and why they did not resolve the uncertainty.",
+                    "What approaches, hypotheses, or methods failed or yielded no useful result. " +
+                    "This documents the experimental nature of the work and shows the outcome was not predetermined.",
+                },
+                future_research: {
+                  type: "string",
+                  description:
+                    "How the findings inform or enable the next stage of research or development. " +
+                    "What remains unresolved? What do results suggest should be investigated next?",
+                },
+                advancement_statement: {
+                  type: "string",
+                  description:
+                    "2–3 sentence direct statement of the advancement achieved or attempted. " +
+                    "What does the claimant now know or now be able to do as a result of this work " +
+                    "that was not known or achievable before the work began?",
                 },
               },
             },
@@ -512,6 +604,10 @@ export function buildDiscoveryUserMessage({
     "",
     "=== REMINDER ===",
     `- Include ALL ${fiscalYearMonths.length} fiscal year months in line_244 monthly_breakdown.`,
+    "- For each line_244 month, set evidence_type to 'supported', 'inferred', or 'gap'.",
+    "- Inference is permitted where the source supports the project sequence; note the basis inline.",
+    "- Keep total line_244 activities text within ~700 words.",
+    "- line_242 combined_draft must be ≤ 350 words.",
     "- Research papers and technical documents are valid SR&ED source material.",
     "- Negative results (e.g. 'X did not cause Y') are valid SR&ED — the uncertainty existed at the outset.",
     "- Use low confidence rather than omitting a project entirely.",

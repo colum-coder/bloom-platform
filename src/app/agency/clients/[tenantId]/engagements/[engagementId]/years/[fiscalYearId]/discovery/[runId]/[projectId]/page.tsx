@@ -179,7 +179,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             T661 Part 2 · Line 242
           </p>
           <p className="text-xs text-gray-500">
-            Describe the scientific or technological advancement sought
+            Scientific or technological uncertainty
           </p>
         </div>
         <div className="mt-4">
@@ -190,7 +190,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             engagementId={params.engagementId}
             fiscalYearId={params.fiscalYearId}
             line="line_242"
-            lineLabel="Advancement sought"
+            lineLabel="Scientific or technological uncertainty"
             aiDraft={project.line_242_ai_draft}
             edited={project.line_242_edited}
           />
@@ -204,7 +204,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             T661 Part 2 · Line 246
           </p>
           <p className="text-xs text-gray-500">
-            Describe the technological uncertainty that was addressed
+            Advancement achieved or attempted
           </p>
         </div>
         <div className="mt-4">
@@ -215,7 +215,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             engagementId={params.engagementId}
             fiscalYearId={params.fiscalYearId}
             line="line_246"
-            lineLabel="Technological uncertainty"
+            lineLabel="Advancement achieved or attempted"
             aiDraft={project.line_246_ai_draft}
             edited={project.line_246_edited}
           />
@@ -229,7 +229,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             T661 Part 2 · Line 244
           </p>
           <p className="text-xs text-gray-500">
-            Monthly description of work performed during the fiscal year
+            Work performed in the tax year
           </p>
         </div>
         <div className="mt-4">
@@ -240,7 +240,7 @@ export default async function ProjectDetailPage({ params }: Props) {
             engagementId={params.engagementId}
             fiscalYearId={params.fiscalYearId}
             line="line_244"
-            lineLabel="Monthly work description"
+            lineLabel="Work performed in the tax year"
             aiDraft={project.line_244_ai_draft}
             edited={project.line_244_edited}
           />

@@ -403,9 +403,23 @@ export type SupportedLine =
 // The *_edited variants start as null and are written by Bloom.
 
 export interface Line242Content {
-  /** Advancement sought — free-form narrative describing the scientific or
-   *  technological advancement the project was seeking to achieve. */
-  narrative: string;
+  /** Working hypothesis at the outset of the investigation */
+  hypothesis: string;
+  /** Prior art / state of existing knowledge that bounded the problem */
+  background: string;
+  /** Experimental methodology or approach used to resolve the uncertainty */
+  methods: string;
+  /** Direct statement of the scientific or technological uncertainty */
+  uncertainty: string;
+  /** Combined T661 Line 242 draft (≤ 350 words) weaving the above elements */
+  combined_draft: string;
+  /** Approximate word count of combined_draft */
+  word_count: number;
+  /**
+   * @deprecated v1/v2 runs stored a single `narrative` string.
+   * The read-only renderer falls back to this when the structured fields are absent.
+   */
+  narrative?: string;
 }
 
 export interface Line244MonthEntry {
@@ -414,6 +428,14 @@ export interface Line244MonthEntry {
   /** Description of SR&ED activities performed in this month, or the
    *  standard placeholder if no activity is evidenced. */
   activities: string;
+  /**
+   * Evidence basis for the timing of this entry:
+   *  - "supported" — timing is directly stated or clearly evidenced in the source material
+   *  - "inferred"  — timing is logically derived from project sequence, study duration,
+   *                  publication context, or method chronology
+   *  - "gap"       — no activity evidenced; standard placeholder text used
+   */
+  evidence_type: "supported" | "inferred" | "gap";
 }
 
 export interface Line244Content {
@@ -424,12 +446,16 @@ export interface Line244Content {
 }
 
 export interface Line246Content {
-  /** Direct statement of the specific technological uncertainty. */
-  uncertainty_statement: string;
-  /** How the claimant approached resolving the uncertainty. */
-  approach_description: string;
-  /** Why standard practice or public knowledge was insufficient. */
-  standard_practice_gap: string;
+  /** What was observed, measured, or produced — the direct experimental outcomes */
+  results: string;
+  /** What the results established — the scientific or technological finding */
+  conclusions: string;
+  /** What was tried and did not achieve the intended outcome */
+  what_did_not_work: string;
+  /** How findings inform or enable the next stage of investigation or development */
+  future_research: string;
+  /** 2–3 sentence statement of the advancement achieved or attempted */
+  advancement_statement: string;
 }
 
 export interface SectionCHint {
