@@ -66,13 +66,16 @@ async function extractText(buffer: Buffer, ext: string): Promise<string | null> 
     }
 
     if (ext === ".pdf") {
-      // pdf-parse is a CJS module. Using require() avoids the ESM/CJS default-export
-      // mismatch. The try/catch handles scanned PDFs (empty text) and require failures.
+      // Use the internal lib path to avoid the test-file loading that happens in
+      // pdf-parse's main index.js — those test files don't exist in production
+      // containers (Railway) and cause a silent failure when required normally.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require("pdf-parse") as (b: Buffer) => Promise<{ text: string }>;
+      const pdfParse = require("pdf-parse/lib/pdf-parse.js") as (
+        b: Buffer
+      ) => Promise<{ text: string }>;
       const result = await pdfParse(buffer);
       const text = result.text?.trim();
-      return text || null; // empty string = scanned PDF → Bloom enters manually
+      return text || null; // empty = scanned PDF → Bloom enters manually
     }
 
     if (ext === ".docx") {
