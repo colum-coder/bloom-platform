@@ -66,14 +66,12 @@ async function extractText(buffer: Buffer, ext: string): Promise<string | null> 
     }
 
     if (ext === ".pdf") {
-      // Use the internal lib path to avoid the test-file loading that happens in
-      // pdf-parse's main index.js — those test files don't exist in production
-      // containers (Railway) and cause a silent failure when required normally.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require("pdf-parse/lib/pdf-parse.js") as (
-        b: Buffer
-      ) => Promise<{ text: string }>;
-      const result = await pdfParse(buffer);
+      // pdf-parse v2 uses a class-based API: new PDFParse({ data }) → .getText()
+      // Dynamic import hits the ESM path which is what this package exports.
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: new Uint8Array(buffer) });
+      const result = await parser.getText();
+      await parser.destroy();
       const text = result.text?.trim();
       return text || null; // empty = scanned PDF → Bloom enters manually
     }
