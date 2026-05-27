@@ -210,17 +210,16 @@ export async function processDiscoveryRun(
   }
 
   // ── Parse tool input ────────────────────────────────────────────────────────
+  // If Claude returns no_projects_reason without a projects key (valid — it found
+  // nothing qualifying), treat missing projects as an empty array so the run
+  // completes gracefully rather than failing with a misleading error message.
   let toolInput: ToolInput;
   try {
     const raw = toolUseBlock.input as Partial<ToolInput>;
-    if (!Array.isArray(raw?.projects)) {
-      await failRun("The AI returned no projects array.");
-      return;
-    }
     toolInput = {
-      run_summary:        raw.run_summary       ?? "",
+      run_summary:        raw.run_summary        ?? "",
       no_projects_reason: raw.no_projects_reason ?? undefined,
-      projects:           raw.projects           as ProjectInput[],
+      projects:           Array.isArray(raw?.projects) ? raw.projects as ProjectInput[] : [],
     };
   } catch (err) {
     await failRun(
