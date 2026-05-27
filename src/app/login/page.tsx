@@ -203,11 +203,26 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const [introComplete, setIntroComplete] = useState(false);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img src="/logo.svg" alt="Bloom" className="h-10 mx-auto" />
+          {/* Logo reveal animation plays once on load.
+              When the logo recedes and the video ends, swap to the static logo. */}
+          {introComplete ? (
+            <img src="/logo.svg" alt="Bloom Funding" className="h-10 mx-auto" />
+          ) : (
+            <video
+              src="/bloom-logo-reveal.mp4"
+              autoPlay
+              muted
+              playsInline
+              onEnded={() => setIntroComplete(true)}
+              className="w-64 mx-auto"
+            />
+          )}
           <p className="mt-3 text-sm text-gray-500">Client Delivery Platform</p>
         </div>
         <Suspense fallback={<div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 h-64" />}>

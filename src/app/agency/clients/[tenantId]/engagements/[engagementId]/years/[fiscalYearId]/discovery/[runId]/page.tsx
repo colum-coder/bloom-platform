@@ -151,52 +151,60 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
 
       {/* ── In-progress loading card ─────────────────────────────────────────── */}
       {isInProgress && (
-        <div className="bg-white rounded-xl border border-blue-100 shadow-sm p-6 mb-5"
-             style={{ borderLeftWidth: 3, borderLeftColor: "#3B82F6" }}>
-          <div className="flex items-start gap-4">
-            {/* Spinning indicator */}
-            <div className="flex-shrink-0 mt-0.5">
-              <svg className="w-6 h-6 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-base font-semibold text-gray-900 mb-1">
-                {run.status === "pending"
-                  ? "Discovery run queued"
-                  : "Claude is analysing your documents"}
-              </h2>
-              <p className="text-sm text-gray-500 mb-2">
-                {run.progress_message
-                  ? run.progress_message
-                  : run.status === "pending"
-                  ? "The run will begin shortly."
-                  : `Reading ${docCount} document${docCount !== 1 ? "s" : ""} and context sources…`}
-              </p>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-8 mb-5">
+          <div className="flex flex-col items-center text-center">
 
-              {/* Document count pill */}
-              <div className="flex items-center gap-3 flex-wrap text-xs text-gray-400">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                  {docCount} document{docCount !== 1 ? "s" : ""}
+            {/* Logo reveal animation — 8 s, synced with the meta refresh */}
+            <video
+              src="/bloom-logo-reveal.mp4"
+              autoPlay
+              muted
+              playsInline
+              className="w-72 mb-4"
+            />
+
+            <h2 className="text-base font-semibold text-gray-900 mb-1">
+              {run.status === "pending"
+                ? "Discovery run queued"
+                : "Claude is analysing your documents"}
+            </h2>
+
+            <p className="text-sm text-gray-500 mb-4 max-w-sm">
+              {run.progress_message
+                ? run.progress_message
+                : run.status === "pending"
+                ? "The run will begin shortly."
+                : `Reading ${docCount} document${docCount !== 1 ? "s" : ""}${
+                    run.context_source_ids.length > 0
+                      ? ` and ${run.context_source_ids.length} context source${run.context_source_ids.length !== 1 ? "s" : ""}`
+                      : ""
+                  }…`}
+            </p>
+
+            {/* Scope pills */}
+            <div className="flex items-center gap-2 flex-wrap justify-center mb-4">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                {docCount} document{docCount !== 1 ? "s" : ""}
+              </span>
+              {run.context_source_ids.length > 0 && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                  {run.context_source_ids.length} context source{run.context_source_ids.length !== 1 ? "s" : ""}
                 </span>
-                {run.context_source_ids.length > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">
-                    {run.context_source_ids.length} context source{run.context_source_ids.length !== 1 ? "s" : ""}
-                  </span>
-                )}
-                <span>This page refreshes automatically every 8 seconds.</span>
-              </div>
-
-              {/* Large-run note */}
-              {isLargeRun && (
-                <p className="mt-3 text-sm text-gray-500 leading-relaxed">
-                  This is a large run and may take a few minutes.{" "}
-                  <strong className="text-gray-700">You can leave this page and return later</strong>{" "}
-                  — the analysis will continue in the background.
-                </p>
               )}
             </div>
+
+            {/* Large-run note */}
+            {isLargeRun && (
+              <p className="text-sm text-gray-500 leading-relaxed max-w-sm mb-3">
+                This is a large run and may take a few minutes.{" "}
+                <strong className="text-gray-700">You can leave this page and return later</strong>{" "}
+                — the analysis continues in the background.
+              </p>
+            )}
+
+            <p className="text-xs text-gray-400">
+              This page refreshes automatically every 8 seconds.
+            </p>
           </div>
         </div>
       )}
