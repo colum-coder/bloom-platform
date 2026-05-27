@@ -5,10 +5,12 @@ import { isAgencyRole } from "@/lib/auth/permissions";
 import { ContextSourceForm } from "./context-source-form";
 
 interface Props {
-  params: { tenantId: string; engagementId: string; fiscalYearId: string };
+  params:       { tenantId: string; engagementId: string; fiscalYearId: string };
+  searchParams?: { from?: string; runId?: string };
 }
 
-export default async function NewContextSourcePage({ params }: Props) {
+export default async function NewContextSourcePage({ params, searchParams }: Props) {
+  const fromDiscovery = searchParams?.from === "discovery";
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -69,15 +71,29 @@ export default async function NewContextSourcePage({ params }: Props) {
       </nav>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-        <h1 className="text-lg font-semibold text-gray-900 mb-1">Add Context Source</h1>
+        <h1 className="text-lg font-semibold text-gray-900 mb-1">
+          {fromDiscovery ? "Add SRéD Context" : "Add Context Source"}
+        </h1>
         <p className="text-sm text-gray-400 mb-6">
-          Paste or type source material for <span className="text-gray-600 font-medium">{fy.label}</span>.
-          The AI will analyse the full text during the next run.
+          {fromDiscovery
+            ? <>
+                Provide narrative context for{" "}
+                <span className="text-gray-600 font-medium">{fy.label}</span> that
+                will help Claude identify SR&amp;ED projects in the next run.
+              </>
+            : <>
+                Paste or type source material for{" "}
+                <span className="text-gray-600 font-medium">{fy.label}</span>.
+                The AI will analyse the full text during the next run.
+              </>
+          }
         </p>
         <ContextSourceForm
           fiscalYearId={params.fiscalYearId}
           engagementId={params.engagementId}
           tenantId={params.tenantId}
+          defaultSourceType={fromDiscovery ? "project_discussion" : undefined}
+          showGuidance={fromDiscovery}
         />
       </div>
     </div>

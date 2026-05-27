@@ -3,13 +3,9 @@
 import { useState, useTransition } from "react";
 import { triggerDiscovery } from "../../discovery-actions";
 
-// ── Size classification thresholds ────────────────────────────────────────────
-// Based on total ai_text character count across all AI-ready documents.
-// These are rough estimates; actual time depends on model load and token count.
-
-const SIZE_SMALL_MAX  =  50_000; // ≤ 50 k chars  → ~30–60 seconds
-const SIZE_MEDIUM_MAX = 150_000; // ≤ 150 k chars → ~1–2 minutes
-                                 // > 150 k chars  → "a few minutes"
+// ── Size classification ───────────────────────────────────────────────────────
+const SIZE_SMALL_MAX  =  50_000;
+const SIZE_MEDIUM_MAX = 150_000;
 
 function classifySize(chars: number): "small" | "medium" | "large" {
   if (chars <= SIZE_SMALL_MAX)  return "small";
@@ -24,13 +20,19 @@ function formatChars(chars: number): string {
 }
 
 interface Props {
-  fiscalYearId:      string;
-  engagementId:      string;
-  tenantId:          string;
-  documentCount:     number;
+  fiscalYearId:       string;
+  engagementId:       string;
+  tenantId:           string;
+  documentCount:      number;
   contextSourceCount: number;
   lowQualityDocCount: number;
-  totalAiTextChars:  number;
+  totalAiTextChars:   number;
+  // What-changed comparison against last run (null = no previous run)
+  lastRunId:          string | null;
+  newDocCount:        number;
+  updatedDocCount:    number;
+  newSourceCount:     number;
+  nothingChanged:     boolean;
 }
 
 export function RunTriggerForm({
@@ -41,9 +43,15 @@ export function RunTriggerForm({
   contextSourceCount,
   lowQualityDocCount,
   totalAiTextChars,
+  lastRunId,
+  newDocCount,
+  updatedDocCount,
+  newSourceCount,
+  nothingChanged,
 }: Props) {
   const [isPending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [error,     setError]        = useState<string | null>(null);
+  const [focusNote, setFocusNote]    = useState("");
 
   const hasInputs = documentCount > 0 || contextSourceCount > 0;
   const size = classifySize(totalAiTextChars);
@@ -52,27 +60,78 @@ export function RunTriggerForm({
     e.preventDefault();
     setError(null);
     startTransition(async () => {
-      const result = await triggerDiscovery(fiscalYearId, engagementId, tenantId);
+      const result = await triggerDiscovery(
+        fiscalYearId,
+        engagementId,
+        tenantId,
+        focusNote.trim() || undefined
+      );
       if (result?.error) setError(result.error);
-      // On success, triggerDiscovery calls redirect() and the browser navigates
-      // to the run detail page (which shows the loading/auto-refresh state).
     });
   }
 
+  const hasChanges = newDocCount > 0 || updatedDocCount > 0 || newSourceCount > 0;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* What Claude will analyse */}
+
+      {/* ── What changed since last run ──────────────────────────────────── */}
+      {lastRunId !== null && (
+        <div className={`rounded-xl border p-5 ${
+          nothingChanged
+            ? "bg-amber-50 border-amber-200"
+            : "bg-emerald-50 border-emerald-200"
+        }`}>
+          <p className={`text-sm font-semibold mb-3 ${
+            nothingChanged ? "text-amber-800" : "text-emerald-800"
+          }`}>
+            Since the last run
+          </p>
+
+          {nothingChanged ? (
+            <>
+              <p className="text-sm text-amber-700 leading-relaxed mb-3">
+                No new documents, AI text updates, or context sources have been added.
+                Re-running with the same materials will likely produce the same result.
+              </p>
+              <p className="text-xs text-amber-600">
+                Consider adding a context source that describes the research in plain language
+                before running again.
+              </p>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              {newDocCount > 0 && (
+                <div className="flex items-center gap-2 text-sm text-emerald-700">
+                  <span className="text-emerald-500 font-bold">+</span>
+                  {newDocCount} new AI-ready document{newDocCount !== 1 ? "s" : ""}
+                </div>
+              )}
+              {updatedDocCount > 0 && (
+                <div className="flex items-center gap-2 text-sm text-emerald-700">
+                  <span className="text-emerald-500 font-bold">↑</span>
+                  {updatedDocCount} document{updatedDocCount !== 1 ? "s" : ""} with updated AI text
+                </div>
+              )}
+              {newSourceCount > 0 && (
+                <div className="flex items-center gap-2 text-sm text-emerald-700">
+                  <span className="text-emerald-500 font-bold">+</span>
+                  {newSourceCount} new context source{newSourceCount !== 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── What Claude will analyse ─────────────────────────────────────── */}
       <div className="rounded-xl bg-gray-50 border border-gray-200 p-5 space-y-3">
         <p className="text-sm font-semibold text-gray-700">What Claude will analyse</p>
 
         <div className="flex items-center gap-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-              documentCount > 0
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-gray-100 text-gray-400"
-            }`}
-          >
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+            documentCount > 0 ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
+          }`}>
             {documentCount}
           </div>
           <div>
@@ -88,13 +147,9 @@ export function RunTriggerForm({
         </div>
 
         <div className="flex items-center gap-3">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
-              contextSourceCount > 0
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-gray-100 text-gray-400"
-            }`}
-          >
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+            contextSourceCount > 0 ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
+          }`}>
             {contextSourceCount}
           </div>
           <div>
@@ -110,12 +165,10 @@ export function RunTriggerForm({
         </div>
       </div>
 
-      {/* Character budget / size estimate */}
+      {/* ── Size estimate ────────────────────────────────────────────────── */}
       {hasInputs && (
         <div className={`rounded-xl border p-5 ${
-          size === "large"
-            ? "bg-amber-50 border-amber-200"
-            : "bg-gray-50 border-gray-200"
+          size === "large" ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-200"
         }`}>
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <p className={`text-sm font-semibold ${size === "large" ? "text-amber-800" : "text-gray-700"}`}>
@@ -126,18 +179,14 @@ export function RunTriggerForm({
               size === "medium" ? "bg-blue-100 text-blue-700"       :
                                   "bg-amber-100 text-amber-800"
             }`}>
-              {size === "small"  ? "Small"  :
-               size === "medium" ? "Medium" :
-                                   "Large"}
+              {size === "small" ? "Small" : size === "medium" ? "Medium" : "Large"}
             </span>
           </div>
 
           <div className="grid grid-cols-3 gap-3 text-center mb-3">
             <div className="rounded-lg bg-white border border-gray-200 px-3 py-2.5">
               <p className="text-lg font-bold text-gray-900">{documentCount}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                document{documentCount !== 1 ? "s" : ""}
-              </p>
+              <p className="text-xs text-gray-500 mt-0.5">document{documentCount !== 1 ? "s" : ""}</p>
             </div>
             <div className="rounded-lg bg-white border border-gray-200 px-3 py-2.5">
               <p className="text-lg font-bold text-gray-900">{formatChars(totalAiTextChars)}</p>
@@ -145,9 +194,7 @@ export function RunTriggerForm({
             </div>
             <div className="rounded-lg bg-white border border-gray-200 px-3 py-2.5">
               <p className="text-lg font-bold text-gray-900">{contextSourceCount}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                context source{contextSourceCount !== 1 ? "s" : ""}
-              </p>
+              <p className="text-xs text-gray-500 mt-0.5">context source{contextSourceCount !== 1 ? "s" : ""}</p>
             </div>
           </div>
 
@@ -155,51 +202,55 @@ export function RunTriggerForm({
             {size === "small"  && "Estimated time: ~30–60 seconds."}
             {size === "medium" && "Estimated time: ~1–2 minutes."}
             {size === "large"  && (
-              <>
-                <strong>This may take a few minutes.</strong>{" "}
-                You can leave this page and return later — the run continues in the background.
-              </>
+              <><strong>This may take a few minutes.</strong>{" "}You can leave this page and return later — the run continues in the background.</>
             )}
           </p>
         </div>
       )}
 
-      {/* What Claude will produce */}
+      {/* ── What Claude will produce ─────────────────────────────────────── */}
       <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-5">
         <p className="text-sm font-semibold text-indigo-900 mb-2">What Claude will produce</p>
         <ul className="space-y-1.5 text-sm text-indigo-800">
-          <li className="flex items-start gap-2">
-            <span className="mt-0.5 text-indigo-400">→</span>
-            <span>1 to N SR&amp;ED project drafts — one per distinct technological challenge</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="mt-0.5 text-indigo-400">→</span>
-            <span><strong>Line 242</strong> — Scientific or technological uncertainty (hypothesis · background · methods · combined draft ≤ 350 words)</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="mt-0.5 text-indigo-400">→</span>
-            <span><strong>Line 244</strong> — Work performed — one entry per fiscal year month, each labelled Supported / Inferred / Gap</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="mt-0.5 text-indigo-400">→</span>
-            <span><strong>Line 246</strong> — Advancement achieved or attempted (results · conclusions · what did not work · future research)</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="mt-0.5 text-indigo-400">→</span>
-            <span>Section C evidence hints and document relationship mapping</span>
-          </li>
+          <li className="flex items-start gap-2"><span className="mt-0.5 text-indigo-400">→</span><span>1 to N SR&amp;ED project drafts — one per distinct technological challenge</span></li>
+          <li className="flex items-start gap-2"><span className="mt-0.5 text-indigo-400">→</span><span><strong>Line 242</strong> — Scientific or technological uncertainty</span></li>
+          <li className="flex items-start gap-2"><span className="mt-0.5 text-indigo-400">→</span><span><strong>Line 244</strong> — Work performed, one entry per fiscal year month</span></li>
+          <li className="flex items-start gap-2"><span className="mt-0.5 text-indigo-400">→</span><span><strong>Line 246</strong> — Advancement achieved or attempted</span></li>
+          <li className="flex items-start gap-2"><span className="mt-0.5 text-indigo-400">→</span><span>Section C evidence hints and document relationship mapping</span></li>
         </ul>
         <p className="text-xs text-indigo-600 mt-3">
           All output is saved as an AI draft. You can edit each line independently. Original drafts are never lost.
         </p>
       </div>
 
-      {/* Low-quality document warning */}
+      {/* ── Optional run focus note ──────────────────────────────────────── */}
+      <div>
+        <label htmlFor="focus-note" className="block text-sm font-medium text-gray-700 mb-1.5">
+          What changed, or what should Claude focus on?{" "}
+          <span className="text-gray-400 font-normal">(optional)</span>
+        </label>
+        <textarea
+          id="focus-note"
+          rows={3}
+          value={focusNote}
+          onChange={(e) => setFocusNote(e.target.value)}
+          placeholder={
+            nothingChanged && lastRunId
+              ? 'Explain what\'s different about this run, e.g. "The previous run missed the gradient descent work in Q3 — that\'s the core SR&ED activity."'
+              : 'e.g. "We added context notes on the ML pipeline. Focus on the uncertainty around the transformer architecture in Q2–Q3."'
+          }
+          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-bloom-blue focus:border-transparent resize-y leading-relaxed"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          This note is appended to the prompt so Claude knows what to prioritise. Stored with the run for auditability.
+        </p>
+      </div>
+
+      {/* ── Warnings ────────────────────────────────────────────────────── */}
       {lowQualityDocCount > 0 && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
           <strong>{lowQualityDocCount} document{lowQualityDocCount !== 1 ? "s have" : " has"} short AI text (&lt; 500 characters).</strong>{" "}
-          Poorly extracted documents may reduce analysis quality. Consider reviewing and supplementing
-          the AI text on those documents before running.
+          Poorly extracted documents may reduce quality. Consider supplementing the AI text before running.
         </div>
       )}
 
@@ -216,6 +267,7 @@ export function RunTriggerForm({
         </div>
       )}
 
+      {/* ── Submit ───────────────────────────────────────────────────────── */}
       <button
         type="submit"
         disabled={isPending || !hasInputs}

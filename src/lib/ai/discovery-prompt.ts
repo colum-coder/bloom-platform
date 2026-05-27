@@ -521,6 +521,8 @@ interface BuildDiscoveryUserMessageParams {
   fiscalYearMonths: string[];
   documents: DiscoveryDocument[];
   contextSources: DiscoveryContextSource[];
+  /** Optional consultant note — what changed since last run, or what to focus on. */
+  runFocusNote?: string;
 }
 
 function formatMonthLabel(ym: string): string {
@@ -537,6 +539,7 @@ export function buildDiscoveryUserMessage({
   fiscalYearMonths,
   documents,
   contextSources,
+  runFocusNote,
 }: BuildDiscoveryUserMessageParams): string {
   const monthList = fiscalYearMonths
     .map((m) => `  - ${formatMonthLabel(m)} (${m})`)
@@ -600,6 +603,22 @@ export function buildDiscoveryUserMessage({
       "\n=== END CONTEXT SOURCES ===\n";
   }
 
+  // ── Optional consultant focus note ───────────────────────────────────────
+  let focusNoteSection = "";
+  if (runFocusNote?.trim()) {
+    focusNoteSection = [
+      "",
+      "=== CONSULTANT NOTE ===",
+      "The Bloom consultant provided the following note for this specific run.",
+      "Treat this as authoritative guidance about what has changed, what is new,",
+      "or what to focus on relative to any previous analysis:",
+      "",
+      runFocusNote.trim(),
+      "=== END CONSULTANT NOTE ===",
+      "",
+    ].join("\n");
+  }
+
   const footer = [
     "",
     "=== REMINDER ===",
@@ -615,7 +634,7 @@ export function buildDiscoveryUserMessage({
     "=== END REMINDER ===",
   ].join("\n");
 
-  return header + docSection + sourceSection + footer;
+  return header + docSection + sourceSection + focusNoteSection + footer;
 }
 
 /**

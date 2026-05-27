@@ -85,7 +85,8 @@ async function verifyFYOwnership(
 export async function triggerDiscovery(
   fiscalYearId: string,
   engagementId: string,
-  tenantId: string
+  tenantId: string,
+  runFocusNote?: string
 ): Promise<{ error?: string }> {
   const { supabase, user } = await requireAgencyUser(tenantId);
 
@@ -171,6 +172,7 @@ export async function triggerDiscovery(
       prompt_version:       DISCOVERY_PROMPT_VERSION_STRING,
       status:               "pending",
       total_document_count: documents.length,
+      run_focus_note:       runFocusNote?.trim() || null,
     } as unknown as never)
     .select("id")
     .single();
@@ -198,6 +200,7 @@ export async function triggerDiscovery(
     model,
     documents,
     contextSources,
+    runFocusNote: runFocusNote?.trim() || undefined,
   }).catch((err) => {
     console.error("[discovery-actions] Unhandled error in background processor:", err);
   });

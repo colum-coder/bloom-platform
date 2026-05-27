@@ -361,7 +361,7 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
               </div>
             )}
 
-            {/* Documents analysed */}
+            {/* Documents analysed with char counts */}
             {diagnosticDocs.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -371,21 +371,34 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
                   {diagnosticDocs.map((doc) => {
                     const charCount = doc.ai_text?.length ?? 0;
                     const isAiReady = !!doc.ai_text;
+                    const isShort   = isAiReady && charCount < 500;
                     return (
                       <div key={doc.id} className="flex items-start gap-3 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2.5">
                         <span className={`mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${
-                          isAiReady ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                          isAiReady && !isShort
+                            ? "bg-emerald-100 text-emerald-700"
+                            : isShort
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-red-100 text-red-700"
                         }`}>
-                          {isAiReady ? "AI Ready" : "Needs Text"}
+                          {isAiReady ? (isShort ? "Short" : "AI Ready") : "Needs Text"}
                         </span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-gray-900 font-medium truncate">{doc.title}</p>
                           <p className="text-xs text-gray-400 mt-0.5">
                             {isAiReady
-                              ? `${charCount.toLocaleString()} characters sent to Claude`
+                              ? <>{charCount.toLocaleString()} chars sent to Claude{isShort && <span className="text-amber-600"> — under 500, may be too sparse</span>}</>
                               : "No AI text — document was NOT included in this run"}
                           </p>
                         </div>
+                        {isAiReady && (
+                          <Link
+                            href={`${base}/documents/${doc.id}`}
+                            className="text-xs text-gray-400 hover:text-indigo-600 flex-shrink-0 mt-0.5 transition-colors"
+                          >
+                            Edit →
+                          </Link>
+                        )}
                       </div>
                     );
                   })}
@@ -393,7 +406,7 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
               </div>
             )}
 
-            {/* Context sources count */}
+            {/* Context sources */}
             {run.context_source_ids.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
@@ -405,49 +418,45 @@ export default async function DiscoveryRunDetailPage({ params }: Props) {
               </div>
             )}
 
-            {/* Suggested actions */}
-            <div className="rounded-lg bg-indigo-50 border border-indigo-100 px-4 py-3.5">
-              <p className="text-xs font-semibold text-indigo-800 mb-2">Suggested next steps</p>
-              <ul className="space-y-1.5 text-sm text-indigo-700">
-                <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 mt-0.5">1.</span>
-                  <span>
-                    Check each document above has an <strong>AI Ready</strong> badge and a character count above ~500.
-                    If a document shows &ldquo;Needs Text,&rdquo; open it and add AI text manually.
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 mt-0.5">2.</span>
-                  <span>
-                    Add a <strong>Context Source</strong> to describe the research in plain language —
-                    what problem was being solved, what was unknown, what was tried, and what was found.
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="flex-shrink-0 mt-0.5">3.</span>
-                  <span>
-                    Run Project Discovery again. The updated prompt explicitly recognises research papers,
-                    negative results, and low-confidence candidates.
-                  </span>
-                </li>
-              </ul>
+            {/* Suggested next steps */}
+            <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3.5">
+              <p className="text-xs font-semibold text-gray-600 mb-2">Why this happens</p>
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Claude needs narrative context to identify SR&amp;ED — not just documents.
+                It needs to understand what was technically <em>uncertain</em>, what was
+                tried, and what was learned. Documents alone (code, invoices, timesheets)
+                rarely contain that story.
+              </p>
             </div>
 
-            {/* Re-run link */}
-            <div className="flex items-center gap-3 pt-1">
+            {/* Action buttons — primary is Add Context, not Re-run */}
+            <div className="space-y-3 pt-1">
               <a
-                href={`${base}/discovery/new`}
-                className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+                href={`${base}/context/new?from=discovery&runId=${params.runId}`}
+                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:inline-flex rounded-lg px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
                 style={{ backgroundColor: "#2B307E" }}
               >
-                Run Project Discovery again
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Add context and re-run
               </a>
-              <a
-                href={`${base}/documents`}
-                className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
-              >
-                Review documents →
-              </a>
+
+              <div className="flex items-center gap-4 text-sm">
+                <a
+                  href={`${base}/discovery/new`}
+                  className="text-gray-500 hover:text-gray-900 transition-colors"
+                >
+                  Re-run with current materials
+                </a>
+                <span className="text-gray-200">·</span>
+                <a
+                  href={`${base}/documents`}
+                  className="text-gray-500 hover:text-gray-900 transition-colors"
+                >
+                  Review documents
+                </a>
+              </div>
             </div>
           </div>
         </div>

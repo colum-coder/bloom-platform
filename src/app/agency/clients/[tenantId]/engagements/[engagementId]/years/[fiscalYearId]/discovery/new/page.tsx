@@ -44,34 +44,80 @@ export default async function RunDiscoveryPage({ params }: Props) {
     .from("tenants").select("name").eq("id", params.tenantId).single();
   const tenantName = (tenantData as unknown as { name: string } | null)?.name ?? "Client";
 
-  // Count available inputs (same queries the action uses)
-  // Also fetch ai_text lengths for the low-quality doc warning (< 500 chars = poor extraction)
-  const [{ count: documentCount }, { count: contextSourceCount }, { data: aiReadyDocs }] = await Promise.all([
+  // ── Load inputs + last run in parallel ────────────────────────────────────
+  // Fetch full doc data (not just count) so we can compute:
+  //   - documentCount
+  //   - totalAiTextChars
+  //   - lowQualityDocCount
+  //   - newDocCount / updatedDocCount since last run
+  type AiReadyDoc = { id: string; ai_text: string; updated_at: string };
+  type SourceId   = { id: string };
+  type LastRun    = { id: string; created_at: string; document_ids: string[]; context_source_ids: string[] };
+
+  const [
+    { data: aiReadyDocsRaw },
+    { data: contextSourcesRaw },
+    { data: lastRunRaw },
+  ] = await Promise.all([
     supabase
       .from("documents")
-      .select("*", { count: "exact", head: true })
+      .select("id, ai_text, updated_at")
       .eq("fiscal_year_id", params.fiscalYearId)
       .eq("tenant_id", params.tenantId)
       .neq("status", "archived")
-      .not("ai_text", "is", null),
+      .not("ai_text", "is", null)
+      .order("created_at", { ascending: true }),
     supabase
       .from("context_sources")
-      .select("*", { count: "exact", head: true })
+      .select("id")
       .eq("fiscal_year_id", params.fiscalYearId)
       .eq("tenant_id", params.tenantId)
       .eq("status", "active"),
     supabase
-      .from("documents")
-      .select("ai_text")
+      .from("discovery_runs")
+      .select("id, created_at, document_ids, context_source_ids")
       .eq("fiscal_year_id", params.fiscalYearId)
       .eq("tenant_id", params.tenantId)
-      .neq("status", "archived")
-      .not("ai_text", "is", null),
+      .in("status", ["completed", "failed"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
-  const aiReadyDocList = (aiReadyDocs ?? []) as Array<{ ai_text: string }>;
+  const aiReadyDocList   = (aiReadyDocsRaw   ?? []) as AiReadyDoc[];
+  const contextSourceList = (contextSourcesRaw ?? []) as SourceId[];
+  const lastRun          = lastRunRaw as unknown as LastRun | null;
+
+  const documentCount      = aiReadyDocList.length;
+  const contextSourceCount = contextSourceList.length;
   const lowQualityDocCount = aiReadyDocList.filter((d) => d.ai_text.length < 500).length;
   const totalAiTextChars   = aiReadyDocList.reduce((sum, d) => sum + d.ai_text.length, 0);
+
+  // ── What changed since last run ─────────────────────────────────────────────
+  let newDocCount     = 0;
+  let updatedDocCount = 0;
+  let newSourceCount  = 0;
+  let nothingChanged  = false;
+
+  if (lastRun) {
+    const lastDocIds    = new Set(lastRun.document_ids);
+    const lastSourceIds = new Set(lastRun.context_source_ids);
+
+    newDocCount = aiReadyDocList.filter((d) => !lastDocIds.has(d.id)).length;
+
+    // A doc "updated AI text" if it was in the last run AND its updated_at is
+    // strictly after the run was created (i.e. ai_text changed after the run queued).
+    updatedDocCount = aiReadyDocList.filter(
+      (d) => lastDocIds.has(d.id) && d.updated_at > lastRun.created_at
+    ).length;
+
+    newSourceCount = contextSourceList.filter((s) => !lastSourceIds.has(s.id)).length;
+
+    nothingChanged =
+      newDocCount     === 0 &&
+      updatedDocCount === 0 &&
+      newSourceCount  === 0;
+  }
 
   const base = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
@@ -103,10 +149,15 @@ export default async function RunDiscoveryPage({ params }: Props) {
           fiscalYearId={params.fiscalYearId}
           engagementId={params.engagementId}
           tenantId={params.tenantId}
-          documentCount={documentCount ?? 0}
-          contextSourceCount={contextSourceCount ?? 0}
+          documentCount={documentCount}
+          contextSourceCount={contextSourceCount}
           lowQualityDocCount={lowQualityDocCount}
           totalAiTextChars={totalAiTextChars}
+          lastRunId={lastRun?.id ?? null}
+          newDocCount={newDocCount}
+          updatedDocCount={updatedDocCount}
+          newSourceCount={newSourceCount}
+          nothingChanged={nothingChanged}
         />
       </div>
 

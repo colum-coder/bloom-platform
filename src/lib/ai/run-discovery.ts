@@ -67,6 +67,8 @@ export interface ProcessDiscoveryRunParams {
   fiscalYearLabel:  string;
   fiscalYearMonths: string[];
   model:            string;
+  /** Optional consultant note injected into the prompt for this run. */
+  runFocusNote?: string;
   documents: Array<{
     id:            string;
     title:         string;
@@ -170,6 +172,7 @@ export async function processDiscoveryRun(
     fiscalYearMonths: params.fiscalYearMonths,
     documents:        params.documents,
     contextSources:   params.contextSources,
+    runFocusNote:     params.runFocusNote,
   });
 
   // ── Call Anthropic — no AbortController, no artificial timeout ────────────

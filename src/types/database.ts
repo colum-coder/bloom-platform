@@ -509,6 +509,12 @@ export interface DiscoveryRun {
    * Added in migration 011.
    */
   total_document_count: number | null;
+  /**
+   * Optional consultant note provided at trigger time.
+   * Appended to the Claude prompt as a focus hint for this specific run.
+   * Added in migration 012.
+   */
+  run_focus_note: string | null;
 }
 
 export interface SredProject {
