@@ -69,9 +69,9 @@ export default async function RunDiscoveryPage({ params }: Props) {
       .not("ai_text", "is", null),
   ]);
 
-  const lowQualityDocCount = (aiReadyDocs ?? []).filter(
-    (d) => (d as { ai_text: string }).ai_text.length < 500
-  ).length;
+  const aiReadyDocList = (aiReadyDocs ?? []) as Array<{ ai_text: string }>;
+  const lowQualityDocCount = aiReadyDocList.filter((d) => d.ai_text.length < 500).length;
+  const totalAiTextChars   = aiReadyDocList.reduce((sum, d) => sum + d.ai_text.length, 0);
 
   const base = `/agency/clients/${params.tenantId}/engagements/${params.engagementId}/years/${params.fiscalYearId}`;
 
@@ -106,6 +106,7 @@ export default async function RunDiscoveryPage({ params }: Props) {
           documentCount={documentCount ?? 0}
           contextSourceCount={contextSourceCount ?? 0}
           lowQualityDocCount={lowQualityDocCount}
+          totalAiTextChars={totalAiTextChars}
         />
       </div>
 

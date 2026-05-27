@@ -485,7 +485,30 @@ export interface DiscoveryRun {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   created_at: string;
+  /**
+   * When the background processor actually began work.
+   * NULL means the run is still queued (status = "pending").
+   * Added in migration 011.
+   */
+  started_at: string | null;
   completed_at: string | null;
+  /**
+   * Optional human-readable status shown while the run is in progress.
+   * e.g. "Analysing 7 documents…" or "Saving 3 projects…"
+   * Added in migration 011.
+   */
+  progress_message: string | null;
+  /**
+   * Documents processed so far (reserved for future per-document streaming mode).
+   * Added in migration 011.
+   */
+  processed_document_count: number | null;
+  /**
+   * Total AI-ready documents queued in this run.
+   * Set at trigger time. Used for size/ETA display on the run detail page.
+   * Added in migration 011.
+   */
+  total_document_count: number | null;
 }
 
 export interface SredProject {

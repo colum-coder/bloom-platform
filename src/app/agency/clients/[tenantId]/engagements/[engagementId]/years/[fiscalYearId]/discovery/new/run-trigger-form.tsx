@@ -3,13 +3,34 @@
 import { useState, useTransition } from "react";
 import { triggerDiscovery } from "../../discovery-actions";
 
+// ── Size classification thresholds ────────────────────────────────────────────
+// Based on total ai_text character count across all AI-ready documents.
+// These are rough estimates; actual time depends on model load and token count.
+
+const SIZE_SMALL_MAX  =  50_000; // ≤ 50 k chars  → ~30–60 seconds
+const SIZE_MEDIUM_MAX = 150_000; // ≤ 150 k chars → ~1–2 minutes
+                                 // > 150 k chars  → "a few minutes"
+
+function classifySize(chars: number): "small" | "medium" | "large" {
+  if (chars <= SIZE_SMALL_MAX)  return "small";
+  if (chars <= SIZE_MEDIUM_MAX) return "medium";
+  return "large";
+}
+
+function formatChars(chars: number): string {
+  if (chars >= 1_000_000) return `${(chars / 1_000_000).toFixed(1)} M chars`;
+  if (chars >= 1_000)     return `${(chars / 1_000).toFixed(1)} k chars`;
+  return `${chars} chars`;
+}
+
 interface Props {
-  fiscalYearId: string;
-  engagementId: string;
-  tenantId: string;
-  documentCount: number;
+  fiscalYearId:      string;
+  engagementId:      string;
+  tenantId:          string;
+  documentCount:     number;
   contextSourceCount: number;
   lowQualityDocCount: number;
+  totalAiTextChars:  number;
 }
 
 export function RunTriggerForm({
@@ -19,11 +40,13 @@ export function RunTriggerForm({
   documentCount,
   contextSourceCount,
   lowQualityDocCount,
+  totalAiTextChars,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const hasInputs = documentCount > 0 || contextSourceCount > 0;
+  const size = classifySize(totalAiTextChars);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -31,14 +54,14 @@ export function RunTriggerForm({
     startTransition(async () => {
       const result = await triggerDiscovery(fiscalYearId, engagementId, tenantId);
       if (result?.error) setError(result.error);
-      // On success, triggerDiscovery calls redirect() — the transition resolves
-      // on the new page. If still here after transition, an error occurred.
+      // On success, triggerDiscovery calls redirect() and the browser navigates
+      // to the run detail page (which shows the loading/auto-refresh state).
     });
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* What will be included */}
+      {/* What Claude will analyse */}
       <div className="rounded-xl bg-gray-50 border border-gray-200 p-5 space-y-3">
         <p className="text-sm font-semibold text-gray-700">What Claude will analyse</p>
 
@@ -86,6 +109,60 @@ export function RunTriggerForm({
           </div>
         </div>
       </div>
+
+      {/* Character budget / size estimate */}
+      {hasInputs && (
+        <div className={`rounded-xl border p-5 ${
+          size === "large"
+            ? "bg-amber-50 border-amber-200"
+            : "bg-gray-50 border-gray-200"
+        }`}>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <p className={`text-sm font-semibold ${size === "large" ? "text-amber-800" : "text-gray-700"}`}>
+              Estimated run size
+            </p>
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+              size === "small"  ? "bg-emerald-100 text-emerald-700" :
+              size === "medium" ? "bg-blue-100 text-blue-700"       :
+                                  "bg-amber-100 text-amber-800"
+            }`}>
+              {size === "small"  ? "Small"  :
+               size === "medium" ? "Medium" :
+                                   "Large"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 text-center mb-3">
+            <div className="rounded-lg bg-white border border-gray-200 px-3 py-2.5">
+              <p className="text-lg font-bold text-gray-900">{documentCount}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                document{documentCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <div className="rounded-lg bg-white border border-gray-200 px-3 py-2.5">
+              <p className="text-lg font-bold text-gray-900">{formatChars(totalAiTextChars)}</p>
+              <p className="text-xs text-gray-500 mt-0.5">total text</p>
+            </div>
+            <div className="rounded-lg bg-white border border-gray-200 px-3 py-2.5">
+              <p className="text-lg font-bold text-gray-900">{contextSourceCount}</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                context source{contextSourceCount !== 1 ? "s" : ""}
+              </p>
+            </div>
+          </div>
+
+          <p className={`text-xs ${size === "large" ? "text-amber-700" : "text-gray-500"}`}>
+            {size === "small"  && "Estimated time: ~30–60 seconds."}
+            {size === "medium" && "Estimated time: ~1–2 minutes."}
+            {size === "large"  && (
+              <>
+                <strong>This may take a few minutes.</strong>{" "}
+                You can leave this page and return later — the run continues in the background.
+              </>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* What Claude will produce */}
       <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-5">
@@ -151,7 +228,7 @@ export function RunTriggerForm({
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            Claude is analysing… this may take 30–60 seconds
+            Creating run…
           </>
         ) : (
           <>
@@ -165,8 +242,7 @@ export function RunTriggerForm({
 
       {isPending && (
         <p className="text-xs text-gray-400">
-          Do not refresh or navigate away — Claude is processing your materials.
-          You will be redirected automatically when done.
+          Queuing run — you will be redirected to the run page momentarily.
         </p>
       )}
     </form>

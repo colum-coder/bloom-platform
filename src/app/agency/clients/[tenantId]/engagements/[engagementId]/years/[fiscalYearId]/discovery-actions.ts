@@ -7,16 +7,24 @@
  *   - All actions verify agency membership via requireAgencyUser.
  *   - Triple-ownership check (fiscal_year_id + engagement_id + tenant_id) on
  *     every mutation.
- *   - ANTHROPIC_API_KEY accessed only via createAnthropicClient() — never
- *     logged, stored, or passed to client code.
+ *   - ANTHROPIC_API_KEY accessed only via createAnthropicClient() inside the
+ *     background processor (run-discovery.ts) — never logged, stored, or passed
+ *     to client code.
  *   - All discovery data is agency-internal. No client-visible output.
  *
  * AI DRAFT IMMUTABILITY:
- *   - *_ai_draft fields are written once by triggerDiscovery and never updated.
+ *   - *_ai_draft fields are written once by the background processor and never updated.
  *   - *_edited fields are written by updateProjectLineContent and start as null.
  *
+ * BACKGROUND PROCESSING (Option A — in-process fire-and-forget):
+ *   triggerDiscovery inserts the run as "pending" then fires a floating promise
+ *   via `void processDiscoveryRun(params).catch(console.error)` before redirecting.
+ *   The actual Anthropic call, project inserts, and run completion happen in
+ *   src/lib/ai/run-discovery.ts running in the background.
+ *   See run-discovery.ts for the full architecture note and migration path.
+ *
  * ACTIONS:
- *   triggerDiscovery         — load materials → call Claude → insert run + projects
+ *   triggerDiscovery         — validate → queue run → fire background processor → redirect
  *   updateProjectLineContent — Bloom edits a T661 line for a project
  *   updateProjectDecision    — Bloom accepts / rejects / defers a project
  */
@@ -24,22 +32,16 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createAnthropicClient, getModel } from "@/lib/ai/anthropic";
+import { getModel } from "@/lib/ai/anthropic";
 import {
   DISCOVERY_PROMPT_VERSION_STRING,
-  DISCOVERY_SYSTEM_PROMPT,
-  SUBMIT_PROJECT_DISCOVERY_TOOL,
-  buildDiscoveryUserMessage,
   generateFiscalYearMonths,
 } from "@/lib/ai/discovery-prompt";
+import {
+  processDiscoveryRun,
+} from "@/lib/ai/run-discovery";
 import { requireAgencyUser } from "../../phase3-actions";
-import type {
-  SredProjectDecision,
-  Line242Content,
-  Line244Content,
-  Line246Content,
-  SectionCHint,
-} from "@/types/database";
+import type { SredProjectDecision } from "@/types/database";
 
 // ── Triple-ownership verification ─────────────────────────────────────────
 
@@ -64,20 +66,20 @@ async function verifyFYOwnership(
 // ─────────────────────────────────────────────────────────────────────────
 // triggerDiscovery
 //
-// Full flow:
-//  1. Verify ownership + load fiscal year (for dates → months)
+// Validates inputs, queues the discovery run, fires the background processor,
+// and redirects immediately. The actual Anthropic call and project inserts
+// happen in src/lib/ai/run-discovery.ts.
+//
+// Flow:
+//  1. Verify ownership + load fiscal year dates
 //  2. Load AI-ready documents (ai_text NOT NULL, status != archived)
 //  3. Load active context sources
-//  4. Require at least one input (document OR context source)
+//  4. Require at least one input
 //  5. Load engagement title
-//  6. Generate fiscal year months from start_date/end_date
-//  7. Insert discovery_run row (status = 'running')
-//  8. Build prompt + call Claude with submit_project_discovery tool
-//  9. Parse tool response
-// 10. Insert sred_project rows (with ai_draft fields)
-// 11. For each project: match document titles → insert project_document_relationships
-// 12. Mark run 'completed'
-// 13. redirect() to run detail page — OUTSIDE any try/catch
+//  6. Generate fiscal year months
+//  7. Insert discovery_run row (status = 'pending', total_document_count set)
+//  8. Fire background processor (floating promise — does NOT block the redirect)
+//  9. redirect() to run detail page — OUTSIDE any try/catch
 // ─────────────────────────────────────────────────────────────────────────
 
 export async function triggerDiscovery(
@@ -153,21 +155,22 @@ export async function triggerDiscovery(
   // ── 6. Generate fiscal year months ───────────────────────────────────────
   const fiscalYearMonths = generateFiscalYearMonths(fy.start_date, fy.end_date);
 
-  // ── 7. Insert discovery_run row ──────────────────────────────────────────
+  // ── 7. Insert discovery_run row (status = pending) ───────────────────────
   const model = getModel();
 
   const { data: runRow, error: runInsertError } = await supabase
     .from("discovery_runs")
     .insert({
-      fiscal_year_id:    fiscalYearId,
-      engagement_id:     engagementId,
-      tenant_id:         tenantId,
-      triggered_by:      user.id,
-      document_ids:      documents.map((d) => d.id),
-      context_source_ids: contextSources.map((s) => s.id),
+      fiscal_year_id:       fiscalYearId,
+      engagement_id:        engagementId,
+      tenant_id:            tenantId,
+      triggered_by:         user.id,
+      document_ids:         documents.map((d) => d.id),
+      context_source_ids:   contextSources.map((s) => s.id),
       model,
-      prompt_version:    DISCOVERY_PROMPT_VERSION_STRING,
-      status:            "running",
+      prompt_version:       DISCOVERY_PROMPT_VERSION_STRING,
+      status:               "pending",
+      total_document_count: documents.length,
     } as unknown as never)
     .select("id")
     .single();
@@ -177,227 +180,29 @@ export async function triggerDiscovery(
 
   const runId = (runRow as unknown as { id: string }).id;
 
-  // ── Inner helper — marks run failed, returns error object ────────────────
-  async function failRun(msg: string): Promise<{ error: string }> {
-    await supabase
-      .from("discovery_runs")
-      .update({
-        status:        "failed",
-        error_message: msg,
-        completed_at:  new Date().toISOString(),
-      } as unknown as never)
-      .eq("id", runId);
-    return { error: msg };
-  }
-
-  // ── 8. Build prompt + call Claude ────────────────────────────────────────
-  const userMessage = buildDiscoveryUserMessage({
-    engagementTitle:  engTitle,
+  // ── 8. Fire background processor (non-blocking) ──────────────────────────
+  // The floating promise runs in the Railway Node.js event loop after this
+  // server action returns. It marks the run running, calls Anthropic, inserts
+  // projects, and marks the run completed/failed.
+  //
+  // KNOWN LIMITATION: if the process restarts mid-run, the row stays "running".
+  // See src/lib/ai/run-discovery.ts for the recovery SQL and migration path.
+  void processDiscoveryRun({
+    runId,
+    fiscalYearId,
+    engagementId,
+    tenantId,
+    engTitle,
     fiscalYearLabel:  fy.label,
     fiscalYearMonths,
+    model,
     documents,
     contextSources,
+  }).catch((err) => {
+    console.error("[discovery-actions] Unhandled error in background processor:", err);
   });
 
-  let aiResponse: Awaited<
-    ReturnType<ReturnType<typeof createAnthropicClient>["messages"]["create"]>
-  >;
-
-  // ── AbortController — hard timeout at 55 seconds ─────────────────────────
-  // Prevents stuck runs from blocking the server action indefinitely.
-  // The 55s limit gives Claude enough time for a typical response while
-  // staying safely inside the hosting platform's 60s request timeout.
-  const abort     = new AbortController();
-  const timeoutId = setTimeout(() => abort.abort(), 55_000);
-
-  try {
-    const ai = createAnthropicClient();
-    aiResponse = await ai.messages.create(
-      {
-        model,
-        max_tokens:  8192,
-        system:      DISCOVERY_SYSTEM_PROMPT,
-        tools:       [SUBMIT_PROJECT_DISCOVERY_TOOL],
-        tool_choice: { type: "tool", name: "submit_project_discovery" },
-        messages:    [{ role: "user", content: userMessage }],
-      },
-      { signal: abort.signal }
-    );
-  } catch (err) {
-    const isTimeout =
-      err instanceof Error &&
-      (err.name === "AbortError" || err.message.includes("aborted"));
-    return await failRun(
-      isTimeout
-        ? "The Anthropic API call timed out after 55 seconds. The document set may be too large. Try removing low-quality documents or splitting the claim year into smaller runs."
-        : `Anthropic API call failed: ${err instanceof Error ? err.message : String(err)}`
-    );
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  const promptTokens     = aiResponse.usage?.input_tokens ?? null;
-  const completionTokens = aiResponse.usage?.output_tokens ?? null;
-
-  // ── 9. Extract tool use block ────────────────────────────────────────────
-  const toolUseBlock = aiResponse.content.find((b) => b.type === "tool_use");
-  if (!toolUseBlock || toolUseBlock.type !== "tool_use") {
-    return await failRun(
-      "The AI did not call the submit_project_discovery tool. " +
-        "The response may have been blocked or the model did not comply with the tool_choice constraint."
-    );
-  }
-
-  // ── Parse tool input ─────────────────────────────────────────────────────
-  type ProjectInput = {
-    project_name: string;
-    confidence?: "high" | "medium" | "low";
-    line_242: Line242Content;
-    line_244: Line244Content;
-    line_246: Line246Content;
-    section_c_hints: SectionCHint[];
-    document_relationships: Array<{
-      document_title: string;
-      relationship_type: string;
-      supports_line: string | null;
-      supports_section: string | null;
-      relevance_note: string | null;
-    }>;
-  };
-
-  type ToolInput = {
-    run_summary: string;
-    no_projects_reason?: string;
-    projects: ProjectInput[];
-  };
-
-  let toolInput: ToolInput;
-
-  try {
-    const raw = toolUseBlock.input as Partial<ToolInput>;
-    if (!Array.isArray(raw?.projects)) {
-      return await failRun("The AI returned no projects array.");
-    }
-    toolInput = {
-      run_summary:       raw.run_summary ?? "",
-      no_projects_reason: raw.no_projects_reason ?? undefined,
-      projects:          raw.projects as ProjectInput[],
-    };
-  } catch (err) {
-    return await failRun(
-      `Failed to parse AI response: ${err instanceof Error ? err.message : String(err)}`
-    );
-  }
-
-  // Zero projects is NOT a failure — Claude may have a legitimate reason.
-  // Complete the run and redirect to the detail page where the diagnostic panel
-  // will show the explanation from no_projects_reason.
-  if (toolInput.projects.length === 0) {
-    const reason = toolInput.no_projects_reason?.trim() || toolInput.run_summary?.trim() || null;
-    await supabase
-      .from("discovery_runs")
-      .update({
-        status:           "completed",
-        run_summary:      reason,
-        prompt_tokens:    promptTokens,
-        completion_tokens: completionTokens,
-        completed_at:     new Date().toISOString(),
-      } as unknown as never)
-      .eq("id", runId);
-
-    redirect(
-      `/agency/clients/${tenantId}/engagements/${engagementId}/years/${fiscalYearId}/discovery/${runId}`
-    );
-  }
-
-  // ── Build document title → ID lookup map ─────────────────────────────────
-  const docTitleToId = new Map(
-    documents.map((d) => [d.title.toLowerCase().trim(), d.id])
-  );
-
-  // ── 10 + 11. Insert sred_projects and relationships ──────────────────────
-  const VALID_RELATIONSHIP_TYPES = new Set([
-    "primary_evidence", "supporting_evidence",
-    "financial_record", "personnel_record", "prior_art",
-  ]);
-  const VALID_SUPPORTS_LINE = new Set([
-    "line_242", "line_244", "line_246", "section_c", "multiple",
-  ]);
-
-  for (const p of toolInput.projects) {
-    if (!p.project_name?.trim()) continue;
-
-    const VALID_CONFIDENCE = new Set(["high", "medium", "low"]);
-
-    const { data: insertedProject, error: projectInsertError } = await supabase
-      .from("sred_projects")
-      .insert({
-        run_id:                  runId,
-        fiscal_year_id:          fiscalYearId,
-        engagement_id:           engagementId,
-        tenant_id:               tenantId,
-        project_name:            p.project_name.trim(),
-        confidence:              VALID_CONFIDENCE.has(p.confidence ?? "")
-          ? p.confidence
-          : null,
-        decision:                "pending",
-        line_242_ai_draft:       p.line_242   ?? null,
-        line_244_ai_draft:       p.line_244   ?? null,
-        line_246_ai_draft:       p.line_246   ?? null,
-        section_c_hints_ai_draft: Array.isArray(p.section_c_hints)
-          ? p.section_c_hints
-          : null,
-      } as unknown as never)
-      .select("id")
-      .single();
-
-    if (projectInsertError || !insertedProject) continue;
-
-    const projectId = (insertedProject as unknown as { id: string }).id;
-
-    // Insert document relationships for this project
-    const relationships = (p.document_relationships ?? []).filter(
-      (r) => r.document_title?.trim() && VALID_RELATIONSHIP_TYPES.has(r.relationship_type)
-    );
-
-    if (relationships.length > 0) {
-      const relInserts = relationships.flatMap((r) => {
-        const docId = docTitleToId.get(r.document_title.toLowerCase().trim());
-        if (!docId) return []; // document not found — skip gracefully
-        return [{
-          project_id:        projectId,
-          document_id:       docId,
-          tenant_id:         tenantId,
-          relationship_type: r.relationship_type,
-          supports_line:     VALID_SUPPORTS_LINE.has(r.supports_line ?? "")
-            ? r.supports_line
-            : null,
-          supports_section: r.supports_section ?? null,
-          relevance_note:   r.relevance_note ?? null,
-        }];
-      });
-
-      if (relInserts.length > 0) {
-        await supabase
-          .from("project_document_relationships")
-          .insert(relInserts as unknown as never);
-      }
-    }
-  }
-
-  // ── 12. Mark run completed ───────────────────────────────────────────────
-  await supabase
-    .from("discovery_runs")
-    .update({
-      status:           "completed",
-      run_summary:      toolInput.run_summary || null,
-      prompt_tokens:    promptTokens,
-      completion_tokens: completionTokens,
-      completed_at:     new Date().toISOString(),
-    } as unknown as never)
-    .eq("id", runId);
-
-  // redirect() is OUTSIDE any try/catch — NEXT_REDIRECT must not be caught
+  // ── 9. redirect() — OUTSIDE any try/catch, NEXT_REDIRECT must not be caught
   redirect(
     `/agency/clients/${tenantId}/engagements/${engagementId}/years/${fiscalYearId}/discovery/${runId}`
   );
