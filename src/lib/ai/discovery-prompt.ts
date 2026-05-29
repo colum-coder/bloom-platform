@@ -1,37 +1,40 @@
 /**
- * Phase 3C: Project Discovery prompt definitions and tool schema.
+ * Phase 3C+ — SR&ED Project Discovery: hypothesis paradigm (v4).
  *
  * SERVER-SIDE ONLY. Do not import from client components.
  *
- * Exports:
- *   DISCOVERY_PROMPT_VERSION_STRING  — version stored on every discovery_run row
- *   DISCOVERY_SYSTEM_PROMPT          — Anthropic system prompt for project discovery
- *   SUBMIT_PROJECT_DISCOVERY_TOOL    — tool definition for the Anthropic API
- *   buildDiscoveryUserMessage        — formats documents + context sources into the user message
+ * The v4 paradigm changes the discovery task from a gatekeeping question
+ * ("which activities qualify as SR&ED?") to a cataloguing question
+ * ("for every distinct technological activity, what is the SR&ED assessment?").
  *
- * The tool schema asks Claude to produce T661 Part 2 draft content for each
- * identified SR&ED project:
- *   line_242 — Advancement sought (narrative)
- *   line_244 — Monthly work description (one entry per fiscal year month)
- *   line_246 — Technological uncertainty (structured fields)
- *   section_c_hints — Supporting evidence hints for Section C
- *   document_relationships — which documents support each project and how
+ * This eliminates the empty-projects problem: Claude can no longer return
+ * nothing when evidence is ambiguous — it must rate every activity as
+ * likely / plausible / unlikely and explain the rating.
  *
- * v1 → v2: Revised to handle research papers and technical documents correctly.
- *   Research papers with uncertainty/methods/results qualify as SR&ED source material
- *   regardless of whether they are written as SR&ED claim documents. Negative results
- *   are valid. no_projects_reason field added to explain empty output.
+ * v3 → v4 changes:
+ *   - Tool renamed: submit_project_discovery → submit_discovery_hypotheses
+ *   - projects[] → hypotheses[] (never empty for docs with technical content)
+ *   - confidence high/medium/low → likelihood likely/plausible/unlikely
+ *   - document relationships now use stable doc slugs (doc_01, doc_02) not titles
+ *   - "likely": full T661 drafts (line_242, line_244, line_246, section_c_hints)
+ *   - "plausible": skeleton fields + missing evidence + consultant questions
+ *   - "unlikely": brief rationale + client confirmation note
  */
 
 import type Anthropic from "@anthropic-ai/sdk";
+import type {
+  Line242Content,
+  Line244Content,
+  Line246Content,
+  SectionCHint,
+} from "@/types/database";
 
 // ── Prompt versioning ──────────────────────────────────────────────────────
 
-export const DISCOVERY_PROMPT_NAME    = "sred_project_discovery_v3";
+export const DISCOVERY_PROMPT_NAME    = "sred_project_discovery_v4";
 export const DISCOVERY_PROMPT_VERSION = "v1";
 export const DISCOVERY_PROMPT_VERSION_STRING =
   `${DISCOVERY_PROMPT_NAME}_${DISCOVERY_PROMPT_VERSION}`;
-// → "sred_project_discovery_v3_v1"
 
 // ── System prompt ──────────────────────────────────────────────────────────
 
@@ -40,416 +43,373 @@ You are an expert SR&ED (Scientific Research & Experimental Development) consult
 at Bloom Funding, a Canadian firm that prepares and files SR&ED tax credit claims \
 on behalf of Canadian businesses.
 
-Your task is to analyse all provided source materials and identify qualifying SR&ED \
-projects. For each project, you will draft T661 Part 2 content that a Bloom consultant \
-will review and refine before the CRA submission.
+## Your Task: SR&ED Discovery Mapping
 
-## SR&ED Eligibility — All Three Criteria Required
+Your task is NOT to decide which activities qualify as SR&ED. \
+Your task is to create a discovery map for the Bloom consultant by cataloguing \
+EVERY distinct technological activity in the source materials and assessing \
+its SR&ED potential.
 
-For work to qualify as SR&ED, all three of the following must be present:
+For every distinct technological activity you observe, you will:
+1. Describe what was observed (observed_activity)
+2. Identify the potential technological uncertainty, if any
+3. State the hypothesis or advancement being sought
+4. Summarise the systematic investigation approach
+5. Describe the potential advancement
+6. Rate its SR&ED likelihood: likely / plausible / unlikely
+7. Explain specifically why you gave that rating
+8. List what evidence is missing
+9. List questions the consultant should ask the client
+10. Recommend the next action
 
-1. TECHNOLOGICAL UNCERTAINTY — At the START of the work, there must have been a \
-specific technological obstacle whose solution could not be determined by standard \
-practice or existing public knowledge. The key question is: was the outcome known \
-in advance, or did the investigators genuinely not know if/how it could be achieved?
+The consultant will review all hypotheses and decide which to pursue. \
+You are cataloguing, not gating.
 
-2. TECHNOLOGICAL ADVANCEMENT — The work must seek to advance the general body of \
-knowledge in a recognized scientific or engineering discipline (biology, chemistry, \
-computer science, engineering, medicine, etc.).
+## SR&ED Criteria — What You Are Assessing Against
 
-3. SYSTEMATIC INVESTIGATION — The work must be conducted through a defined methodology: \
-forming a hypothesis, designing and conducting experiments or trials, observing and \
-recording results, and drawing conclusions. Ad hoc guesswork does not qualify; \
-structured experimental work does.
+For work to qualify as SR&ED, all three must be present:
 
-## Source Material Types — What You Will Be Given
+1. TECHNOLOGICAL UNCERTAINTY — At the START of the work, there was a specific \
+technological obstacle whose solution could not be determined by standard \
+practice or existing public knowledge.
 
-Source materials may include ANY of the following:
-- Published or unpublished research papers describing scientific or technical experiments
-- Internal technical documents, design documents, or technical memos
-- Meeting notes, project discussions, or discovery call notes
-- Client-generated SR&ED narratives or prior claim documents
-- Financial summaries, payroll records, or cost documentation
+2. TECHNOLOGICAL ADVANCEMENT — The work seeks to advance the general body of \
+knowledge in a recognised scientific or engineering discipline.
 
-**You do not need the source to explicitly mention "SR&ED."** Your job is to read what \
-is described and assess whether the described work meets the three criteria above.
+3. SYSTEMATIC INVESTIGATION — The work was conducted through a defined \
+methodology: forming a hypothesis, conducting experiments or trials, \
+observing results, and drawing conclusions.
 
-## How to Read Research Papers as SR&ED Source Material
+## Likelihood Tiers
 
-Published research papers are often the best evidence of SR&ED-eligible work. When you \
-encounter a paper or technical document, treat it as a description of work the \
-organisation performed. Assess it as follows:
+**likely** — Strong evidence of all three SR&ED criteria is present.
+- Technological uncertainty is clearly named or strongly implied
+- Systematic investigation is evident (experiments, iterations, failure records)
+- Results, conclusions, or outcomes are described or derivable
+- REQUIRED OUTPUT: All hypothesis fields PLUS full T661 drafts \
+  (line_242, line_244, line_246, section_c_hints)
 
-- ABSTRACT/INTRODUCTION: Usually states the research question and motivation. Look for \
-  the uncertainty — what was being tested or investigated and why the answer was unknown.
-- BACKGROUND/PRIOR ART: Establishes the state of existing knowledge. This helps define \
-  the technological uncertainty boundary.
-- METHODS/EXPERIMENTAL DESIGN: Describes the systematic investigation — how experiments \
-  were designed, what models or tools were used, what was measured. This evidences \
-  systematic investigation.
-- RESULTS: Describes what was observed. This is the outcome of the investigation.
-- DISCUSSION/CONCLUSIONS: Explains what was learned. This is the advancement — even if \
-  the result was negative.
+**plausible** — Meaningful technological activity exists but evidence is incomplete.
+- At least one SR&ED criterion clearly present; others implied or unclear
+- Work described but lacking experimental detail, failure records, or \
+  clear uncertainty statements
+- More information needed before a claim can be filed
+- REQUIRED OUTPUT: All hypothesis fields. Do NOT generate T661 drafts.
 
-**NEGATIVE RESULTS ARE VALID SR&ED.** A paper that concludes "X did not cause Y" is \
-still documenting SR&ED work. The uncertainty existed at the outset, the investigation \
-was systematic, and the finding that X does not cause Y is itself a scientific \
-advancement — it narrows the solution space and contributes to the body of knowledge.
+**unlikely** — Activity appears routine, no genuine technological uncertainty identifiable.
+- Work is optimisation, debugging of known issues, validation, integration, \
+  or application of known methods to new data
+- No plausible technological uncertainty boundary identifiable
+- Still worth noting so the consultant can confirm with the client whether \
+  undocumented experimental work exists
+- REQUIRED OUTPUT: All hypothesis fields. Do NOT generate T661 drafts.
 
-## Confidence Levels — Use Them Rather Than Returning Nothing
+## Critical Rules
 
-Use these levels honestly and proportionally:
+**NEVER return an empty hypotheses array** unless the documents contain \
+absolutely zero technological activity (e.g. purely financial, HR, or \
+administrative content with no technical work described).
 
-- **high**: All three SR&ED criteria are clearly present in the source material — \
-  a specific uncertainty is named, the methodology is systematic, and results or \
-  conclusions are described.
-- **medium**: Evidence of all three criteria exists but some elements are implicit or \
-  could be strengthened by additional documentation.
-- **low**: The work plausibly qualifies but the evidence is thin, indirect, or ambiguous. \
-  The consultant will need to gather more information.
+**When in doubt, use "plausible" not "unlikely".** A plausible hypothesis \
+with good consultant questions is more useful than a suppressed one.
 
-**Always prefer a low-confidence project over returning nothing.** A low-confidence \
-project is a starting point for the consultant — it flags that the work might qualify \
-and prompts them to ask the right questions. Returning nothing when SR&ED-like work is \
-described deprives the client of a potential claim.
+**Do not exaggerate weak activities.** "Likely" and "plausible" ratings should be reserved for activities with genuine evidence of technological uncertainty, systematic investigation, or novel advancement. Routine engineering, standard software integration, data analysis using established methods, and predictable optimisation do not qualify. It is acceptable and useful to rate activities as "unlikely" — this protects the client from weak claims. The goal is complete discovery, not claim maximisation. An "unlikely" hypothesis with a clear rationale is more valuable than an inflated "plausible" that wastes the consultant's time.
 
-## Identifying SR&ED Projects
+**Return a hypothesis for every distinct technological activity.** \
+Activities that appear routine must still appear as "unlikely" with a rationale. \
+Omitting an activity entirely is never correct.
 
-- One project = one distinct technological challenge with its own uncertainty, \
-  advancement, and experimental approach.
-- Do NOT create one project per document or one project per experiment. Synthesize \
-  across all materials for the same underlying challenge.
-- If a single paper describes multiple distinct research questions with different \
-  hypotheses, create a project for each distinct question.
-- If the materials are limited (e.g., a single paper), still draft projects — even \
-  partial drafts with medium or low confidence are more useful than an empty list.
+## How to Read Source Materials
 
-## T661 Part 2 — What Each Line Covers
+Source materials may include research papers, technical documents, meeting notes, \
+context narratives, financial records, or any combination. \
+You do not need the source to mention "SR&ED" — assess what the work actually was.
+
+For research papers:
+- ABSTRACT/INTRODUCTION: research question + motivation → potential uncertainty
+- METHODS/EXPERIMENTAL DESIGN: systematic investigation evidence
+- RESULTS/DISCUSSION/CONCLUSIONS: advancement evidence (including negative results)
+
+Negative results are valid SR&ED. "X did not cause Y" is a scientific finding \
+representing real advancement of knowledge.
+
+## T661 Line Guidance (for "likely" hypotheses only)
 
 **Line 242 — Scientific or technological uncertainty:**
-Provide four structured elements followed by a combined draft.
-
-- HYPOTHESIS: The working hypothesis or research question that drove the investigation. \
-  State this as what the investigators believed might be achievable or determinable, \
-  and why it was worth investigating.
-- BACKGROUND: The prior state of knowledge at the outset. Establish the boundary of \
-  existing understanding — what was already known, what gaps remained, and why the \
-  uncertainty was genuine rather than a matter of looking up an established answer.
-- METHODS: The experimental methodology or investigative approach used to address the \
-  uncertainty. Describe what was designed, built, or tested, and how evidence was gathered. \
-  This sub-section evidences the systematic investigation criterion.
-- UNCERTAINTY: A precise, direct statement of the specific scientific or technological \
-  uncertainty — what genuinely could not be determined by standard practice or existing \
-  knowledge without performing the work.
-
-Then produce a COMBINED DRAFT: a single integrated narrative of at most 350 words \
-that weaves hypothesis → background → uncertainty → methods into a coherent T661 \
-Line 242 entry. Write from the claimant's perspective. The combined draft must clearly \
-state the uncertainty, establish the knowledge boundary, and explain why the work \
-constituted genuine SR&ED investigation.
+Produce: hypothesis (working hypothesis at outset), background (prior knowledge state), \
+methods (systematic approach), uncertainty (precise statement starting with \
+"It was uncertain whether..." or "At the outset, it was unknown..."), \
+combined_draft (≤ 350 words integrated narrative), word_count.
 
 **Line 244 — Work performed in the tax year:**
-For each fiscal year month provided, describe the SR&ED work performed. Label every \
-monthly entry with one of three evidence types:
-
-- "supported": the timing and activities are directly stated or clearly evidenced \
-  in the source material (e.g., dated notes, explicit study period, timestamped data).
-- "inferred": the timing or activities are logically derived from the project sequence, \
-  study duration, publication context, or method chronology. When inferring, note the \
-  basis briefly within the activities text — for example: "Based on the estimated study \
-  duration described in the paper, literature search and hypothesis refinement are \
-  inferred to have occurred during this period."
-- "gap": no activity can be evidenced or reasonably inferred for this period. Use \
-  exactly: "No SR&ED activity evidenced in available materials for this period."
-
-Inference is permitted and encouraged where the source material supports the overall \
-project sequence even without exact dates. Do not present inferred timing as directly \
-documented fact. The total activities text across all months should remain within \
-approximately 700 words.
+One entry per fiscal year month. evidence_type: "supported" | "inferred" | "gap". \
+Total activities text ~700 words. Inference is permitted — note the basis briefly.
 
 **Line 246 — Advancement achieved or attempted:**
-Provide five structured elements describing the outcome of the work:
+Produce: results, conclusions, what_did_not_work, future_research, \
+advancement_statement (2–3 sentence direct statement).
 
-- RESULTS: What was actually observed, measured, or produced. Describe the direct \
-  experimental or investigative outcomes — what happened when the methodology was applied.
-- CONCLUSIONS: What the results established. What was learned from the investigation, \
-  including negative findings (e.g., "X did not cause Y" is a valid scientific conclusion).
-- WHAT DID NOT WORK: What approaches, hypotheses, or methods failed or yielded no useful \
-  result. This documents the experimental nature of the investigation and shows that \
-  the outcome was not predetermined.
-- FUTURE RESEARCH: How the findings inform or enable the next stage of research or \
-  development. What remains unresolved, and what the results suggest should be \
-  investigated next.
-- ADVANCEMENT STATEMENT: A direct 2–3 sentence statement of the advancement achieved \
-  or attempted: what the claimant now knows or can now do as a result of this work \
-  that was not known or achievable before the work began.
+**Section C hints:** Practical evidence-gathering advice for the consultant.
 
-**Section C hints:**
-Provide practical hints for the Bloom consultant. Typical hints include: what additional \
-records (lab notebooks, git logs, meeting notes, timesheets) would strengthen the claim, \
-which sections of the T661 Technical Report still need evidence, and what questions to \
-ask the client about the study period and personnel.
+## Document References
 
-## Document Relationships
+Each document is labelled with a stable ID (doc_01, doc_02, etc.). \
+In document_relationships, use the document_id field (e.g. "doc_01") \
+to reference documents — not the title alone. \
+The optional document_title field is for human readability only.
 
-For each project, list relevant documents with:
-- relationship_type: how the document supports the project
-- supports_line: which T661 line it primarily evidences
-- relevance_note: one sentence on specific relevance
-
-## When to Return Zero Projects
-
-Return zero projects ONLY if ALL of the following are true:
-- The materials contain no identifiable technological uncertainty
-- OR the described work is purely routine (no experiments, no unknown outcomes)
-- OR the materials contain only administrative/financial content with no technical work
-
-If you return zero projects, you MUST populate no_projects_reason with a specific \
-explanation of why — what criteria were missing and what would need to change for \
-projects to be identifiable. "Insufficient material" alone is not acceptable.
-
-## Run Summary
-
-The run_summary should give Bloom a 3–5 sentence overview: how many projects identified, \
-what technological domain, quality of source materials, and any significant gaps. If zero \
-projects, the summary should explain the specific gap.
+Evidence roles:
+- primary_evidence: directly supports the SR&ED hypothesis
+- supporting_evidence: corroborates but is not the main proof
+- context: background, prior art, or project context
+- contradictory_evidence: challenges the hypothesis
+- evidence_gap: a document that should be obtained but does not yet exist
 `;
 
 // ── Tool definition ────────────────────────────────────────────────────────
 
-export const SUBMIT_PROJECT_DISCOVERY_TOOL: Anthropic.Tool = {
-  name: "submit_project_discovery",
+export const SUBMIT_DISCOVERY_HYPOTHESES_TOOL: Anthropic.Tool = {
+  name: "submit_discovery_hypotheses",
   description:
-    "Submit all identified SR&ED projects with T661 Part 2 draft content and a run-level summary. " +
-    "If no projects are identified, still call this tool with an empty projects array and populate no_projects_reason.",
+    "Submit SR&ED discovery hypotheses for all distinct technological activities observed " +
+    "in the source materials. Every technological activity must appear as a hypothesis " +
+    "rated likely / plausible / unlikely. The hypotheses array must never be empty " +
+    "unless the documents contain zero technological content.",
   input_schema: {
     type: "object" as const,
-    required: ["run_summary", "projects"],
+    required: ["run_summary", "hypotheses"],
     properties: {
       run_summary: {
         type: "string",
         description:
-          "3–5 sentence plain-English summary of the discovery run findings. " +
-          "Include: number of projects found, technological domain, source material quality, gaps. " +
-          "If zero projects, explain specifically what criteria were missing.",
+          "3–5 sentence overview of the discovery run. " +
+          "Include: total hypothesis count, breakdown by tier " +
+          "(e.g. '2 likely, 1 plausible, 1 unlikely'), " +
+          "technological domains, source material quality, notable gaps.",
       },
-      no_projects_reason: {
-        type: "string",
-        description:
-          "REQUIRED if projects array is empty. " +
-          "Explain specifically: (1) what SR&ED criteria were present in the materials, " +
-          "(2) what criteria were absent or unclear, and " +
-          "(3) what the consultant should do to enable a project to be identified. " +
-          "Be specific — reference the actual content of the source materials.",
-      },
-      projects: {
+      hypotheses: {
         type: "array",
         description:
-          "All SR&ED projects identified from the source materials. " +
-          "Prefer low-confidence projects over an empty list. " +
-          "Return an empty array only if the materials genuinely contain no identifiable technological uncertainty.",
+          "SR&ED hypotheses for every distinct technological activity observed. " +
+          "CRITICAL: Return a hypothesis for EVERY activity — even routine ones must " +
+          "appear as 'unlikely' with a rationale. " +
+          "This array must NOT be empty unless documents contain zero technological content.",
         items: {
           type: "object",
-          required: ["project_name", "line_242", "line_244", "line_246", "section_c_hints", "document_relationships"],
+          required: [
+            "title", "likelihood",
+            "observed_activity", "potential_technological_uncertainty",
+            "hypothesis_or_advancement_sought", "systematic_investigation_summary",
+            "potential_advancement", "why_this_rating",
+            "missing_evidence", "consultant_questions",
+            "recommended_next_step", "draft_readiness",
+            "document_relationships",
+          ],
           properties: {
-            project_name: {
+            title: {
               type: "string",
               description:
-                "A concise, specific project title describing the technological challenge " +
-                "(e.g. 'Investigation of selective microglial progranulin depletion on NCL neuropathology'). " +
+                "Concise title describing the specific technological activity " +
+                "(e.g. 'Investigation of transformer vs LSTM for non-stationary time-series anomaly detection'). " +
                 "Avoid generic names like 'Research Project'.",
             },
-            confidence: {
+            likelihood: {
               type: "string",
-              enum: ["high", "medium", "low"],
+              enum: ["likely", "plausible", "unlikely"],
               description:
-                "Confidence that this project meets SR&ED criteria. " +
-                "Use 'low' rather than omitting the project entirely.",
+                "'likely' = strong evidence of all 3 SR&ED criteria; " +
+                "'plausible' = meaningful tech activity, incomplete evidence; " +
+                "'unlikely' = appears routine but note for client confirmation.",
             },
+            observed_activity: {
+              type: "string",
+              description:
+                "What was the organisation actually doing? Describe the technical " +
+                "activity in plain language as observed in the source materials.",
+            },
+            potential_technological_uncertainty: {
+              type: "string",
+              description:
+                "What could not be known or determined by standard practice at the outset? " +
+                "For 'unlikely', explain why no genuine uncertainty is identifiable. " +
+                "Start with 'It was uncertain whether...' or " +
+                "'No clear technological uncertainty identifiable because...'",
+            },
+            hypothesis_or_advancement_sought: {
+              type: "string",
+              description:
+                "What hypothesis was being tested or what advancement was being attempted? " +
+                "What did the investigators believe might be achievable or provable?",
+            },
+            systematic_investigation_summary: {
+              type: "string",
+              description:
+                "How was the investigation conducted? Describe any experimental methodology, " +
+                "iterative testing, failure analysis, or structured approach. " +
+                "For 'unlikely', note if no systematic investigation is evident.",
+            },
+            potential_advancement: {
+              type: "string",
+              description:
+                "What was learned, achieved, or attempted? Negative results count. " +
+                "For 'unlikely', note if the outcome was predictable from the outset.",
+            },
+            why_this_rating: {
+              type: "string",
+              description:
+                "Explain specifically why this hypothesis received its likelihood rating. " +
+                "Reference the SR&ED criteria: which are clearly met, which are absent " +
+                "or unclear, and why.",
+            },
+            missing_evidence: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Specific records that would strengthen this hypothesis. " +
+                "E.g. 'Lab notebooks or experiment logs for the study period', " +
+                "'Git commit history showing iterative changes'. " +
+                "Empty array if evidence is complete (likely tier with full documentation).",
+            },
+            consultant_questions: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Questions for the Bloom consultant to ask the client to validate or " +
+                "strengthen this hypothesis. Focus on uncovering uncertainty, failed attempts, " +
+                "and systematic methodology. " +
+                "Empty array for 'unlikely' hypotheses where the rationale is already clear.",
+            },
+            recommended_next_step: {
+              type: "string",
+              enum: [
+                "draft_full_project",
+                "draft_skeleton_and_request_evidence",
+                "brief_client_check",
+                "do_not_pursue",
+              ],
+              description:
+                "'draft_full_project' = ready to develop full T661 claim (pair with 'likely'); " +
+                "'draft_skeleton_and_request_evidence' = start skeleton, gather missing evidence (pair with 'plausible'); " +
+                "'brief_client_check' = quick conversation to confirm or rule out (pair with 'unlikely'); " +
+                "'do_not_pursue' = clearly not SR&ED, no further action.",
+            },
+            draft_readiness: {
+              type: "string",
+              enum: ["ready_for_review", "needs_consultant_validation", "insufficient_evidence"],
+              description:
+                "'ready_for_review' = T661 draft produced and evidence is complete; " +
+                "'needs_consultant_validation' = draft produced but consultant must verify key claims; " +
+                "'insufficient_evidence' = cannot draft without more information.",
+            },
+            // ── Optional T661 drafts — REQUIRED for "likely" tier ──────────
             line_242: {
               type: "object",
+              description:
+                "T661 Line 242 draft. REQUIRED for 'likely' hypotheses. " +
+                "Do NOT include for 'plausible' or 'unlikely'.",
               required: ["hypothesis", "background", "methods", "uncertainty", "combined_draft", "word_count"],
-              description: "T661 Part 2, Line 242 — Scientific or technological uncertainty.",
               properties: {
-                hypothesis: {
-                  type: "string",
-                  description:
-                    "The working hypothesis or research question at the outset. " +
-                    "What did the investigators believe might be achievable or determinable, and why?",
-                },
-                background: {
-                  type: "string",
-                  description:
-                    "Prior state of knowledge at the outset. What was already known? " +
-                    "What gaps in knowledge made the uncertainty genuine rather than a matter of looking up an established answer?",
-                },
-                methods: {
-                  type: "string",
-                  description:
-                    "Experimental methodology or investigative approach. " +
-                    "What was designed, built, or tested? How was evidence gathered? Evidences systematic investigation.",
-                },
-                uncertainty: {
-                  type: "string",
-                  description:
-                    "A precise, direct statement of the specific scientific or technological uncertainty. " +
-                    "What genuinely could not be determined without performing the work? " +
-                    "Start with: 'It was uncertain whether...' or 'At the outset of this work, it was unknown...'",
-                },
+                hypothesis:     { type: "string" },
+                background:     { type: "string" },
+                methods:        { type: "string" },
+                uncertainty:    { type: "string" },
                 combined_draft: {
                   type: "string",
-                  description:
-                    "Integrated T661 Line 242 narrative (maximum 350 words). " +
-                    "Weave hypothesis → background → uncertainty → methods into a coherent entry " +
-                    "written from the claimant's perspective. Must clearly state the uncertainty, " +
-                    "establish the knowledge boundary, and explain why the work constituted genuine SR&ED.",
+                  description: "Integrated T661 Line 242 narrative, maximum 350 words.",
                 },
-                word_count: {
-                  type: "number",
-                  description: "Approximate word count of combined_draft.",
-                },
+                word_count:     { type: "number" },
               },
             },
             line_244: {
               type: "object",
+              description:
+                "T661 Line 244 draft. REQUIRED for 'likely' hypotheses. " +
+                "Do NOT include for 'plausible' or 'unlikely'.",
               required: ["monthly_breakdown", "summary"],
-              description: "T661 Part 2, Line 244 — Monthly work description.",
               properties: {
                 monthly_breakdown: {
                   type: "array",
-                  description:
-                    "One entry per fiscal year month. Include every month provided. " +
-                    "If the source does not specify monthly timing, distribute work across the claim period " +
-                    "based on context (study duration, publication date, etc.) and note assumptions in the summary.",
                   items: {
                     type: "object",
                     required: ["month", "activities", "evidence_type"],
                     properties: {
-                      month: {
-                        type: "string",
-                        description: "YYYY-MM format, e.g. '2023-04'.",
-                      },
-                      activities: {
-                        type: "string",
-                        description:
-                          "SR&ED work performed this month. " +
-                          "For inferred entries, briefly note the basis (e.g. 'Based on the estimated study duration...'). " +
-                          "For gap entries use exactly: 'No SR&ED activity evidenced in available materials for this period.'",
-                      },
+                      month:         { type: "string", description: "YYYY-MM" },
+                      activities:    { type: "string" },
                       evidence_type: {
                         type: "string",
                         enum: ["supported", "inferred", "gap"],
-                        description:
-                          "'supported' = timing directly stated or clearly evidenced in source material. " +
-                          "'inferred' = timing logically derived from project sequence, study duration, or context. " +
-                          "'gap' = no activity evidenced or reasonably inferable.",
                       },
                     },
                   },
                 },
-                summary: {
-                  type: "string",
-                  description:
-                    "2–3 sentence overall summary of work performed. " +
-                    "Note any assumptions made about timing if the source did not specify monthly detail.",
-                },
+                summary: { type: "string" },
               },
             },
             line_246: {
               type: "object",
+              description:
+                "T661 Line 246 draft. REQUIRED for 'likely' hypotheses. " +
+                "Do NOT include for 'plausible' or 'unlikely'.",
               required: ["results", "conclusions", "what_did_not_work", "future_research", "advancement_statement"],
-              description: "T661 Part 2, Line 246 — Advancement achieved or attempted.",
               properties: {
-                results: {
-                  type: "string",
-                  description:
-                    "What was actually observed, measured, or produced. " +
-                    "Describe the direct experimental or investigative outcomes — what happened when the methodology was applied.",
-                },
-                conclusions: {
-                  type: "string",
-                  description:
-                    "What the results established. What was learned from the investigation, " +
-                    "including negative findings. A finding that 'X did not cause Y' is a valid scientific conclusion.",
-                },
-                what_did_not_work: {
-                  type: "string",
-                  description:
-                    "What approaches, hypotheses, or methods failed or yielded no useful result. " +
-                    "This documents the experimental nature of the work and shows the outcome was not predetermined.",
-                },
-                future_research: {
-                  type: "string",
-                  description:
-                    "How the findings inform or enable the next stage of research or development. " +
-                    "What remains unresolved? What do results suggest should be investigated next?",
-                },
-                advancement_statement: {
-                  type: "string",
-                  description:
-                    "2–3 sentence direct statement of the advancement achieved or attempted. " +
-                    "What does the claimant now know or now be able to do as a result of this work " +
-                    "that was not known or achievable before the work began?",
-                },
+                results:               { type: "string" },
+                conclusions:           { type: "string" },
+                what_did_not_work:     { type: "string" },
+                future_research:       { type: "string" },
+                advancement_statement: { type: "string" },
               },
             },
             section_c_hints: {
               type: "array",
               description:
-                "Practical hints for the Bloom consultant about evidence gaps and documentation opportunities.",
+                "Section C evidence hints for the Bloom consultant. " +
+                "Include for 'likely' hypotheses.",
               items: {
                 type: "object",
                 required: ["section", "hint"],
                 properties: {
-                  section: {
-                    type: "string",
-                    description:
-                      "T661 Technical Report section (e.g. 'Work performed', 'Results and conclusions').",
-                  },
-                  hint: {
-                    type: "string",
-                    description:
-                      "Specific, actionable advice (e.g. 'Request lab notebooks or data logs for the study period').",
-                  },
+                  section: { type: "string" },
+                  hint:    { type: "string" },
                 },
               },
             },
             document_relationships: {
               type: "array",
               description:
-                "Documents from the provided list relevant to this project. " +
-                "Only use document titles that exactly match names in the provided source list.",
+                "Documents relevant to this hypothesis. " +
+                "Use document_id (e.g. 'doc_01') — the stable ID from the document list. " +
+                "The document_title field is display-only and is NOT used for matching.",
               items: {
                 type: "object",
-                required: ["document_title", "relationship_type", "supports_line", "relevance_note"],
+                required: ["document_id", "evidence_role", "relevance_summary"],
                 properties: {
+                  document_id: {
+                    type: "string",
+                    description: "Stable document ID assigned in this run (e.g. 'doc_01').",
+                  },
                   document_title: {
                     type: "string",
-                    description: "Exact title of the document as provided.",
+                    description: "Display name only. Not used for matching.",
                   },
-                  relationship_type: {
+                  evidence_role: {
                     type: "string",
                     enum: [
                       "primary_evidence",
                       "supporting_evidence",
-                      "financial_record",
-                      "personnel_record",
-                      "prior_art",
+                      "context",
+                      "contradictory_evidence",
+                      "evidence_gap",
                     ],
-                    description: "How this document supports the project.",
+                    description: "How this document relates to the hypothesis.",
                   },
-                  supports_line: {
+                  relevance_summary: {
                     type: "string",
-                    enum: ["line_242", "line_244", "line_246", "section_c", "multiple"],
-                    description: "Which T661 Part 2 line this document primarily supports.",
+                    description: "One sentence on specific relevance to this hypothesis.",
                   },
-                  supports_section: {
-                    type: "string",
-                    description: "Technical Report section evidenced (e.g. 'Scientific or technological uncertainty').",
-                  },
-                  relevance_note: {
-                    type: "string",
-                    description: "One sentence on specific relevance to this project.",
+                  cited_passages: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Optional: specific quotes or passages from the document.",
                   },
                 },
               },
@@ -516,13 +476,17 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 };
 
 interface BuildDiscoveryUserMessageParams {
-  engagementTitle: string;
-  fiscalYearLabel: string;
+  engagementTitle:  string;
+  fiscalYearLabel:  string;
   fiscalYearMonths: string[];
-  documents: DiscoveryDocument[];
-  contextSources: DiscoveryContextSource[];
-  /** Optional consultant note — what changed since last run, or what to focus on. */
-  runFocusNote?: string;
+  documents:        DiscoveryDocument[];
+  contextSources:   DiscoveryContextSource[];
+  /**
+   * Stable slug IDs for each document (e.g. "doc_01").
+   * Index matches documents[]. Built in run-discovery.ts.
+   */
+  docSlugs:         string[];
+  runFocusNote?:    string;
 }
 
 function formatMonthLabel(ym: string): string {
@@ -539,28 +503,34 @@ export function buildDiscoveryUserMessage({
   fiscalYearMonths,
   documents,
   contextSources,
+  docSlugs,
   runFocusNote,
 }: BuildDiscoveryUserMessageParams): string {
   const monthList = fiscalYearMonths
     .map((m) => `  - ${formatMonthLabel(m)} (${m})`)
     .join("\n");
 
+  const docIndex = docSlugs
+    .map((slug, i) => `  ${slug} = "${documents[i]?.title ?? "unknown"}"`)
+    .join("\n");
+
   const header = [
-    "You are analysing source materials for the following SR&ED engagement:",
+    "You are creating an SR&ED discovery map for the following engagement:",
     `**Engagement**: ${engagementTitle}`,
     `**Claim Year (Fiscal Year)**: ${fiscalYearLabel}`,
     "",
-    "**Fiscal Year Months — include ALL of these in line_244 monthly_breakdown:**",
+    "**Fiscal Year Months — include ALL of these in line_244 for 'likely' hypotheses:**",
     monthList,
     "",
     `Source materials provided: ${documents.length} document(s) and ${contextSources.length} context source(s).`,
     "",
-    "Read all materials carefully. Identify any work that involves technological uncertainty, ",
-    "systematic investigation, and advancement — regardless of whether the documents were written",
-    "as SR&ED claim documents. Research papers, technical studies, and experimental reports are",
-    "all valid SR&ED source material.",
+    "**Document IDs for this run (use in document_relationships.document_id):**",
+    docIndex,
     "",
-    "After reading, call the submit_project_discovery tool with your complete output.",
+    "Read ALL materials carefully. For every distinct technological activity you observe,",
+    "generate a hypothesis and rate it likely / plausible / unlikely.",
+    "",
+    "After reading all materials, call submit_discovery_hypotheses with your complete assessment.",
     "",
   ].join("\n");
 
@@ -569,6 +539,7 @@ export function buildDiscoveryUserMessage({
   if (documents.length > 0) {
     const docBlocks = documents.map((doc, i) => {
       const typeLabel = DOCUMENT_TYPE_LABELS[doc.document_type] ?? doc.document_type;
+      const slug = docSlugs[i] ?? `doc_${String(i + 1).padStart(2, "0")}`;
       let text = doc.ai_text;
       let truncNote = "";
       if (text.length > MAX_DOC_CHARS) {
@@ -576,7 +547,7 @@ export function buildDiscoveryUserMessage({
         truncNote =
           "\n[Content truncated at 40,000 characters — full document available in the platform]";
       }
-      return `\n--- Document ${i + 1}: ${doc.title} | Type: ${typeLabel} | ${doc.ai_text.length.toLocaleString()} characters ---\n${text}${truncNote}\n---`;
+      return `\n--- Document ${slug}: ${doc.title} | Type: ${typeLabel} | ${doc.ai_text.length.toLocaleString()} chars ---\n${text}${truncNote}\n---`;
     });
     docSection =
       "\n=== UPLOADED DOCUMENTS ===\n" +
@@ -609,9 +580,8 @@ export function buildDiscoveryUserMessage({
     focusNoteSection = [
       "",
       "=== CONSULTANT NOTE ===",
-      "The Bloom consultant provided the following note for this specific run.",
-      "Treat this as authoritative guidance about what has changed, what is new,",
-      "or what to focus on relative to any previous analysis:",
+      "The Bloom consultant provided this note for this specific run.",
+      "Treat it as authoritative guidance about what has changed or what to focus on:",
       "",
       runFocusNote.trim(),
       "=== END CONSULTANT NOTE ===",
@@ -622,15 +592,15 @@ export function buildDiscoveryUserMessage({
   const footer = [
     "",
     "=== REMINDER ===",
+    "- Return a hypothesis for EVERY distinct technological activity.",
+    "- The hypotheses[] array must NOT be empty unless documents have zero tech content.",
+    "- Use 'unlikely' rather than omitting an activity.",
+    "- Use document_id values (doc_01, doc_02, etc.) in document_relationships — NOT titles.",
+    "- 'likely' hypotheses MUST include line_242, line_244, line_246, section_c_hints.",
+    "- 'plausible' and 'unlikely' hypotheses must NOT include T661 drafts.",
     `- Include ALL ${fiscalYearMonths.length} fiscal year months in line_244 monthly_breakdown.`,
-    "- For each line_244 month, set evidence_type to 'supported', 'inferred', or 'gap'.",
-    "- Inference is permitted where the source supports the project sequence; note the basis inline.",
-    "- Keep total line_244 activities text within ~700 words.",
-    "- line_242 combined_draft must be ≤ 350 words.",
-    "- Research papers and technical documents are valid SR&ED source material.",
-    "- Negative results (e.g. 'X did not cause Y') are valid SR&ED — the uncertainty existed at the outset.",
-    "- Use low confidence rather than omitting a project entirely.",
-    "- If returning zero projects, you MUST populate no_projects_reason explaining specifically what was missing.",
+    "- line_242 combined_draft must be ≤ 350 words. Total line_244 activities ~700 words.",
+    "- Negative results (e.g. 'X did not cause Y') are valid SR&ED.",
     "=== END REMINDER ===",
   ].join("\n");
 
@@ -639,11 +609,10 @@ export function buildDiscoveryUserMessage({
 
 /**
  * Generates YYYY-MM strings for every month between startDate and endDate (inclusive).
- * Example: generateFiscalYearMonths("2023-04-01", "2024-03-31") → ["2023-04", ..., "2024-03"]
  */
 export function generateFiscalYearMonths(
   startDate: string,
-  endDate: string
+  endDate:   string
 ): string[] {
   const months: string[] = [];
   const start = new Date(startDate);

@@ -42,6 +42,37 @@ export type ProposalRunStatus =
 
 export type ProposalConfidence = "high" | "medium" | "low";
 
+// ── Phase 3C+: hypothesis paradigm types ──────────────────────────────────
+
+export type SredLikelihood = "likely" | "plausible" | "unlikely";
+
+export type EvidenceRole =
+  | "primary_evidence"
+  | "supporting_evidence"
+  | "context"
+  | "contradictory_evidence"
+  | "evidence_gap";
+
+export interface HypothesisData {
+  observed_activity: string;
+  potential_technological_uncertainty: string;
+  hypothesis_or_advancement_sought: string;
+  systematic_investigation_summary: string;
+  potential_advancement: string;
+  why_this_rating: string;
+  missing_evidence: string[];
+  consultant_questions: string[];
+  recommended_next_step:
+    | "draft_full_project"
+    | "draft_skeleton_and_request_evidence"
+    | "brief_client_check"
+    | "do_not_pursue";
+  draft_readiness:
+    | "ready_for_review"
+    | "needs_consultant_validation"
+    | "insufficient_evidence";
+}
+
 // ── Phase 3A row types ─────────────────────────────────────────────────────
 
 export type TenantType = "agency" | "client";
@@ -387,7 +418,11 @@ export type DocumentRelationshipType =
   | "supporting_evidence"
   | "financial_record"
   | "personnel_record"
-  | "prior_art";
+  | "prior_art"
+  // v4 hypothesis paradigm evidence roles
+  | "context"
+  | "contradictory_evidence"
+  | "evidence_gap";
 
 export type SupportedLine =
   | "line_242"
@@ -517,6 +552,19 @@ export interface DiscoveryRun {
   run_focus_note: string | null;
 }
 
+/**
+ * Stores both v3 SR&ED projects and v4 SR&ED hypothesis assessments.
+ *
+ * v3 runs (prompt < v4): confidence populated, likelihood=NULL, hypothesis_data=NULL.
+ *   Line 242/244/246 drafts are T661 content for qualifying projects.
+ *
+ * v4 runs (v4+ prompt): likelihood populated (likely/plausible/unlikely),
+ *   hypothesis_data populated with assessment fields, confidence = mapped equivalent.
+ *   Line 242/244/246 drafts only present for "likely" hypotheses.
+ *
+ * "Accepted" hypotheses (decision='accepted') can be promoted to finalised SR&ED projects
+ * in a future phase. For now, sred_projects serves as the hypothesis registry.
+ */
 export interface SredProject {
   id: string;
   run_id: string;
@@ -526,6 +574,17 @@ export interface SredProject {
   project_name: string;
   /** AI-assigned confidence level for SR&ED qualification. NULL for pre-v3 runs. */
   confidence: "high" | "medium" | "low" | null;
+  /**
+   * Hypothesis paradigm likelihood tier (v4+ runs).
+   * NULL for pre-v4 runs — fall back to confidence field.
+   * Added in migration 013.
+   */
+  likelihood: SredLikelihood | null;
+  /**
+   * Hypothesis assessment data blob (v4+ runs). NULL for pre-v4 runs.
+   * Added in migration 013.
+   */
+  hypothesis_data: HypothesisData | null;
   decision: SredProjectDecision;
   decision_reason: string | null;
   reviewed_by: string | null;

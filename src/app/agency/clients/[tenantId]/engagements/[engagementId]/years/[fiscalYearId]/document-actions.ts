@@ -77,7 +77,6 @@ async function extractText(buffer: Buffer, ext: string): Promise<string | null> 
     }
 
     if (ext === ".docx") {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mammoth = require("mammoth") as {
         extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }>;
       };
